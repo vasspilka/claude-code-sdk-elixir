@@ -111,6 +111,59 @@ defmodule ClaudeSDK.Test.Fixtures do
     }
   end
 
+  def can_use_tool_request_json do
+    %{
+      "type" => "control_request",
+      "request_id" => "req_perm_001",
+      "request" => %{
+        "subtype" => "can_use_tool",
+        "tool_name" => "Bash",
+        "input" => %{"command" => "rm -rf /"}
+      }
+    }
+  end
+
+  def mcp_message_request_json do
+    %{
+      "type" => "control_request",
+      "request_id" => "req_mcp_001",
+      "request" => %{
+        "subtype" => "mcp_message",
+        "server_name" => "test-server",
+        "jsonrpc_message" => %{
+          "jsonrpc" => "2.0",
+          "id" => 1,
+          "method" => "tools/call",
+          "params" => %{
+            "name" => "greet",
+            "arguments" => %{"name" => "World"}
+          }
+        }
+      }
+    }
+  end
+
+  def rewind_request_json do
+    %{
+      "type" => "control_request",
+      "request_id" => "req_rewind_001",
+      "request" => %{
+        "subtype" => "rewind_files",
+        "user_message_id" => "msg_abc123"
+      }
+    }
+  end
+
+  def rewind_response_json do
+    %{
+      "type" => "control_response",
+      "response" => %{
+        "request_id" => "req_rewind_001",
+        "success" => true
+      }
+    }
+  end
+
   @doc "Encode a fixture as a JSON line (with trailing newline)."
   def to_json_line(fixture) do
     Jason.encode!(fixture) <> "\n"

@@ -52,8 +52,15 @@ defmodule ClaudeSDK.Transport.Subprocess do
     args = CommandBuilder.build_args(options)
     env = CommandBuilder.build_env(options)
 
-    # Erlang's open_port expects charlists for env keys/values and cd path
-    charlist_env = Enum.map(env, fn {k, v} -> {String.to_charlist(k), String.to_charlist(v)} end)
+    # Erlang's open_port expects charlists for env keys/values and cd path.
+    # {Key, false} unsets an env var in the subprocess.
+    charlist_env =
+      Enum.map(env, fn {k, v} -> {String.to_charlist(k), String.to_charlist(v)} end)
+
+    # Always unset CLAUDECODE to allow the SDK to spawn the CLI from within
+    # a Claude Code session (e.g. when developing/testing the SDK itself).
+    charlist_env = [{~c"CLAUDECODE", false} | charlist_env]
+
     cd = String.to_charlist(options.cwd || File.cwd!())
 
     port_opts = [

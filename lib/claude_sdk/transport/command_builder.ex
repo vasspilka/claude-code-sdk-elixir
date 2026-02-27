@@ -31,6 +31,7 @@ defmodule ClaudeSDK.Transport.CommandBuilder do
     |> maybe_add("--max-budget-usd", opts.max_budget_usd)
     |> maybe_add("--max-thinking-tokens", opts.max_thinking_tokens)
     |> add_permission_mode(opts.permission_mode)
+    |> add_permission_prompt_tool(opts.can_use_tool)
     |> maybe_add_flag("--continue", opts.continue)
     |> maybe_add("--resume", opts.resume)
     |> maybe_add_flag("--fork-session", opts.fork_session)
@@ -40,6 +41,7 @@ defmodule ClaudeSDK.Transport.CommandBuilder do
     |> add_json_opt("--settings", opts.settings)
     |> maybe_add_list("--setting-sources", opts.setting_sources)
     |> add_mcp_config(opts.mcp_config)
+    |> add_sdk_mcp_servers(opts.mcp_servers)
     |> add_repeated("--add-dir", opts.add_dirs)
     |> add_repeated("--plugin-dir", opts.plugin_dirs)
     |> Kernel.++(opts.extra_args)
@@ -55,11 +57,33 @@ defmodule ClaudeSDK.Transport.CommandBuilder do
       {"CLAUDE_AGENT_SDK_VERSION", "0.1.0"}
     ]
 
-    user_env = Enum.map(opts.env, fn {k, v} -> {to_string(k), to_string(v)} end)
-    base ++ user_env
+    base
+    |> maybe_add_checkpointing_env(opts.enable_file_checkpointing)
+    |> Kernel.++(Enum.map(opts.env, fn {k, v} -> {to_string(k), to_string(v)} end))
   end
 
   # Private helpers
+
+  defp add_permission_prompt_tool(args, nil), do: args
+
+  defp add_permission_prompt_tool(args, callback) when is_function(callback, 2) do
+    args ++ ["--permission-prompt-tool", "stdio"]
+  end
+
+  defp add_sdk_mcp_servers(args, []), do: args
+  defp add_sdk_mcp_servers(args, nil), do: args
+
+  defp add_sdk_mcp_servers(args, servers) when is_list(servers) do
+    cli_config = ClaudeSDK.MCP.Server.to_cli_config(servers)
+    args ++ ["--mcp-config", Jason.encode!(cli_config)]
+  end
+
+  defp maybe_add_checkpointing_env(env, false), do: env
+  defp maybe_add_checkpointing_env(env, nil), do: env
+
+  defp maybe_add_checkpointing_env(env, true) do
+    env ++ [{"CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING", "true"}]
+  end
 
   defp maybe_add(args, _flag, nil), do: args
   defp maybe_add(args, flag, value), do: args ++ [flag, to_string(value)]

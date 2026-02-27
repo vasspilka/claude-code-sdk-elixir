@@ -7,6 +7,10 @@ defmodule ClaudeSDK.Types.Options do
 
   @type permission_mode :: :default | :accept_edits | :plan | :bypass_permissions
 
+  @type can_use_tool_callback ::
+          (tool_name :: String.t(), input :: map() ->
+             :allow | {:allow, map()} | {:deny, String.t()})
+
   @type t :: %__MODULE__{
           # CLI path override (nil = auto-discover)
           cli_path: String.t() | nil,
@@ -31,6 +35,9 @@ defmodule ClaudeSDK.Types.Options do
 
           # Permission mode
           permission_mode: permission_mode() | nil,
+
+          # Permission callback
+          can_use_tool: can_use_tool_callback() | nil,
 
           # Session management
           continue: boolean(),
@@ -58,6 +65,9 @@ defmodule ClaudeSDK.Types.Options do
           # MCP configuration
           mcp_config: map() | String.t() | nil,
 
+          # In-process MCP servers
+          mcp_servers: [map()],
+
           # Plugin directories
           plugin_dirs: [String.t()],
 
@@ -69,6 +79,9 @@ defmodule ClaudeSDK.Types.Options do
 
           # Environment variables
           env: map(),
+
+          # File checkpointing
+          enable_file_checkpointing: boolean(),
 
           # Extra CLI args (escape hatch)
           extra_args: [String.t()]
@@ -86,6 +99,7 @@ defmodule ClaudeSDK.Types.Options do
             max_budget_usd: nil,
             max_thinking_tokens: nil,
             permission_mode: nil,
+            can_use_tool: nil,
             continue: false,
             resume: nil,
             fork_session: false,
@@ -98,9 +112,11 @@ defmodule ClaudeSDK.Types.Options do
             settings: nil,
             setting_sources: nil,
             mcp_config: nil,
+            mcp_servers: [],
             plugin_dirs: [],
             hooks: %{},
             agents: %{},
             env: %{},
+            enable_file_checkpointing: false,
             extra_args: []
 end

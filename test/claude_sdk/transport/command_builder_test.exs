@@ -189,6 +189,51 @@ defmodule ClaudeSDK.Transport.CommandBuilderTest do
       refute "--permission-mode" in args
       refute "--resume" in args
     end
+
+    test "adds --permission-prompt-tool when can_use_tool is set" do
+      callback = fn _tool, _input -> :allow end
+      args = CommandBuilder.build_args(%Options{can_use_tool: callback})
+
+      assert_flag(args, "--permission-prompt-tool", "stdio")
+    end
+
+    test "omits --permission-prompt-tool when can_use_tool is nil" do
+      args = CommandBuilder.build_args(%Options{can_use_tool: nil})
+
+      refute "--permission-prompt-tool" in args
+    end
+
+    test "adds --mcp-config for mcp_servers" do
+      server =
+        ClaudeSDK.MCP.Server.create("test-server", "1.0", [
+          %ClaudeSDK.MCP.Tool{
+            name: "greet",
+            description: "Say hello",
+            input_schema: %{"type" => "object"},
+            handler: fn _args -> {:ok, "hi"} end
+          }
+        ])
+
+      args = CommandBuilder.build_args(%Options{mcp_servers: [server]})
+
+      idx = Enum.find_index(args, &(&1 == "--mcp-config"))
+      assert idx != nil
+
+      config_json = Enum.at(args, idx + 1)
+      {:ok, config} = Jason.decode(config_json)
+      assert Map.has_key?(config["mcpServers"], "test-server")
+      assert config["mcpServers"]["test-server"]["type"] == "sdk"
+    end
+
+    test "omits --mcp-config when mcp_servers is empty" do
+      args = CommandBuilder.build_args(%Options{mcp_servers: []})
+      # Only the static mcp_config nil path — no --mcp-config from servers
+      refute "--mcp-config" in args or
+               Enum.any?(Enum.chunk_every(args, 2, 1), fn
+                 ["--mcp-config", val] -> String.contains?(val, "mcpServers")
+                 _ -> false
+               end)
+    end
   end
 
   describe "build_env/1" do
@@ -209,6 +254,18 @@ defmodule ClaudeSDK.Transport.CommandBuilderTest do
       env = CommandBuilder.build_env(%Options{env: %{foo: :bar}})
 
       assert {"foo", "bar"} in env
+    end
+
+    test "includes checkpointing env var when enabled" do
+      env = CommandBuilder.build_env(%Options{enable_file_checkpointing: true})
+
+      assert {"CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING", "true"} in env
+    end
+
+    test "omits checkpointing env var when disabled" do
+      env = CommandBuilder.build_env(%Options{enable_file_checkpointing: false})
+
+      refute Enum.any?(env, fn {k, _} -> k == "CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING" end)
     end
   end
 

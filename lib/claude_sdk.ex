@@ -23,8 +23,32 @@ defmodule ClaudeSDK do
         %ClaudeSDK.Types.ResultMessage{} = msg -> handle_result(msg)
         _ -> :ok
       end)
+
+  ## Permission Callbacks
+
+      ClaudeSDK.query("Read my files", %ClaudeSDK.Types.Options{
+        can_use_tool: fn tool_name, _input ->
+          if tool_name in ["Read", "Glob"], do: :allow, else: {:deny, "Not permitted"}
+        end
+      })
+      |> Enum.each(&IO.inspect/1)
+
+  ## In-Process MCP Servers
+
+      server = ClaudeSDK.create_mcp_server("my-tools", "1.0", [
+        %ClaudeSDK.MCP.Tool{
+          name: "greet",
+          description: "Say hello",
+          input_schema: %{"type" => "object", "properties" => %{"name" => %{"type" => "string"}}},
+          handler: fn args -> {:ok, "Hello, \#{args["name"]}!"} end
+        }
+      ])
+
+      ClaudeSDK.query("Use the greet tool", %ClaudeSDK.Types.Options{mcp_servers: [server]})
+      |> Enum.each(&IO.inspect/1)
   """
 
+  alias ClaudeSDK.ControlRouter
   alias ClaudeSDK.MessageParser
   alias ClaudeSDK.Transport.Subprocess
   alias ClaudeSDK.Types.Options
@@ -36,6 +60,9 @@ defmodule ClaudeSDK do
 
   The stream yields message structs (AssistantMessage, SystemMessage, etc.)
   and terminates when a ResultMessage is received or the subprocess exits.
+
+  Control requests (e.g. permission checks, MCP messages) are intercepted
+  and handled automatically when callbacks are configured.
 
   ## Parameters
 
@@ -61,8 +88,34 @@ defmodule ClaudeSDK do
     )
   end
 
+  @doc """
+  Create an in-process MCP server configuration.
+
+  Returns a server config map that can be passed in `Options.mcp_servers`.
+  """
+  @spec create_mcp_server(String.t(), String.t(), [ClaudeSDK.MCP.Tool.t()]) :: map()
+  def create_mcp_server(name, version, tools) do
+    ClaudeSDK.MCP.Server.create(name, version, tools)
+  end
+
+  @doc false
+  def generate_request_id do
+    "req_" <> Base.encode16(:crypto.strong_rand_bytes(8), case: :lower)
+  end
+
   # Stream.resource start_fun: spawn subprocess and send initialization + prompt
   defp start_subprocess(prompt, opts) do
+    # Build MCP tool index if mcp_servers are configured
+    mcp_tool_index = build_mcp_tool_index(opts.mcp_servers)
+
+    # Build handler registry for control_request dispatch
+    handler_opts = %{
+      can_use_tool: opts.can_use_tool,
+      mcp_tool_index: mcp_tool_index
+    }
+
+    control_handlers = ControlRouter.build_handlers(handler_opts)
+
     {:ok, pid} = Subprocess.start_link(caller: self(), options: opts)
 
     # Send initialize control request
@@ -108,26 +161,37 @@ defmodule ClaudeSDK do
 
     Subprocess.send_message(pid, user_message)
 
-    pid
+    %{subprocess: pid, control_handlers: control_handlers}
   end
 
   # Stream.resource next_fun: receive and parse messages
   defp receive_messages(:halt), do: {:halt, :done}
 
-  defp receive_messages(pid) do
+  defp receive_messages(%{subprocess: pid, control_handlers: handlers} = state) do
     receive do
+      {:claude_message, %{"type" => "control_request"} = raw} ->
+        case ControlRouter.dispatch(raw, handlers) do
+          {:handled, response} ->
+            Subprocess.send_message(pid, response)
+            {[], state}
+
+          {:unhandled, _} ->
+            case MessageParser.parse(raw) do
+              {:ok, msg} -> {[msg], state}
+              {:error, _} -> {[], state}
+            end
+        end
+
       {:claude_message, raw} ->
         case MessageParser.parse(raw) do
           {:ok, %ClaudeSDK.Types.ResultMessage{} = msg} ->
-            # Result means we're done — emit it and halt
             {[msg], :halt}
 
           {:ok, msg} ->
-            {[msg], pid}
+            {[msg], state}
 
           {:error, _reason} ->
-            # Skip unparseable messages, continue receiving
-            {[], pid}
+            {[], state}
         end
 
       {:claude_exit, _reason} ->
@@ -142,6 +206,12 @@ defmodule ClaudeSDK do
   defp cleanup(:done), do: :ok
   defp cleanup(:timeout), do: :ok
 
+  defp cleanup(%{subprocess: pid}) do
+    if Process.alive?(pid) do
+      Subprocess.stop(pid)
+    end
+  end
+
   defp cleanup(pid) when is_pid(pid) do
     if Process.alive?(pid) do
       Subprocess.stop(pid)
@@ -150,7 +220,10 @@ defmodule ClaudeSDK do
 
   defp cleanup(_), do: :ok
 
-  defp generate_request_id do
-    "req_" <> Base.encode16(:crypto.strong_rand_bytes(8), case: :lower)
+  defp build_mcp_tool_index([]), do: %{}
+  defp build_mcp_tool_index(nil), do: %{}
+
+  defp build_mcp_tool_index(servers) when is_list(servers) do
+    ClaudeSDK.MCP.Server.build_tool_index(servers)
   end
 end
