@@ -1,6 +1,14 @@
 defmodule ClaudeSDK.Transport.CLIDiscovery do
   @moduledoc """
-  Finds the Claude CLI binary and validates its version.
+  Finds the Claude CLI binary on the system.
+
+  Resolution order:
+  1. Explicit path provided via `Options.cli_path` (if it exists on disk).
+  2. `System.find_executable/1` searching the system PATH.
+  3. Known installation locations (`/usr/local/bin/claude`, `/usr/bin/claude`,
+     `/opt/homebrew/bin/claude`).
+
+  Raises `ClaudeSDK.CLINotFoundError` if the binary cannot be found.
   """
 
   @known_locations [

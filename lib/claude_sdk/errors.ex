@@ -1,5 +1,17 @@
 defmodule ClaudeSDK.CLINotFoundError do
-  @moduledoc "Raised when the Claude CLI binary cannot be found."
+  @moduledoc """
+  Raised when the Claude CLI binary cannot be found.
+
+  This typically means the CLI is not installed. Install it with:
+
+      npm install -g @anthropic-ai/claude-code
+
+  You can also set `cli_path` in `%Options{}` to point to a specific binary.
+
+  ## Fields
+
+  - `message` — Human-readable error message.
+  """
   defexception [:message]
 
   @impl true
@@ -18,7 +30,17 @@ defmodule ClaudeSDK.CLINotFoundError do
 end
 
 defmodule ClaudeSDK.TransportError do
-  @moduledoc "Raised when subprocess communication fails."
+  @moduledoc """
+  Raised when subprocess communication fails.
+
+  Covers failures in the Erlang Port layer: the subprocess crashed,
+  stdin/stdout pipe broke, or the Port could not be opened.
+
+  ## Fields
+
+  - `message` — Human-readable error message.
+  - `reason` — The underlying error term.
+  """
   defexception [:message, :reason]
 
   @impl true
@@ -30,7 +52,17 @@ defmodule ClaudeSDK.TransportError do
 end
 
 defmodule ClaudeSDK.ProtocolError do
-  @moduledoc "Raised when the CLI sends a malformed or unexpected message."
+  @moduledoc """
+  Raised when the CLI sends a malformed or unexpected message.
+
+  This indicates a mismatch between the SDK and CLI protocol versions,
+  or corrupted data on the NDJSON stream.
+
+  ## Fields
+
+  - `message` — Human-readable error message.
+  - `raw_data` — The raw data that could not be parsed.
+  """
   defexception [:message, :raw_data]
 
   @impl true
@@ -42,7 +74,17 @@ defmodule ClaudeSDK.ProtocolError do
 end
 
 defmodule ClaudeSDK.TimeoutError do
-  @moduledoc "Raised when a CLI operation times out."
+  @moduledoc """
+  Raised when a CLI operation times out.
+
+  The SDK enforces two timeouts: a 30-second initialization handshake timeout
+  and a 120-second inactivity timeout during streaming.
+
+  ## Fields
+
+  - `message` — Human-readable error message.
+  - `timeout_ms` — The timeout duration that was exceeded, in milliseconds.
+  """
   defexception [:message, :timeout_ms]
 
   @impl true

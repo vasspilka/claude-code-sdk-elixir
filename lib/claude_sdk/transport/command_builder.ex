@@ -1,6 +1,11 @@
 defmodule ClaudeSDK.Transport.CommandBuilder do
   @moduledoc """
-  Maps a `ClaudeSDK.Types.Options` struct to CLI argument list.
+  Converts a `ClaudeSDK.Types.Options` struct into CLI arguments and environment variables.
+
+  Translates each Options field into the corresponding `claude` CLI flag or
+  environment variable. Handles type conversions (atoms to CLI strings, maps
+  to JSON, lists to comma-separated values) and builds the in-process MCP
+  server config for `--mcp-config`.
   """
 
   alias ClaudeSDK.Types.Options
