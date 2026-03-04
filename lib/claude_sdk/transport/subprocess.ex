@@ -36,6 +36,12 @@ defmodule ClaudeSDK.Transport.Subprocess do
     GenServer.start_link(__MODULE__, opts)
   end
 
+  @doc "Start the subprocess without linking to the caller."
+  @spec start(keyword()) :: GenServer.on_start()
+  def start(opts) do
+    GenServer.start(__MODULE__, opts)
+  end
+
   @doc "Send a map as a JSON line to the CLI's stdin."
   @spec send_message(GenServer.server(), map()) :: :ok
   def send_message(server, message) when is_map(message) do
@@ -55,7 +61,20 @@ defmodule ClaudeSDK.Transport.Subprocess do
     caller = Keyword.get(opts, :caller, self())
     options = Keyword.get(opts, :options, %Options{})
 
-    cli_path = CLIDiscovery.find_cli!(options.cli_path)
+    cli_path =
+      try do
+        CLIDiscovery.find_cli!(options.cli_path)
+      rescue
+        e in ClaudeSDK.CLINotFoundError -> {:error, e}
+      end
+
+    case cli_path do
+      {:error, e} -> {:stop, e}
+      cli_path -> do_init(cli_path, caller, options)
+    end
+  end
+
+  defp do_init(cli_path, caller, options) do
     args = CommandBuilder.build_args(options)
     env = CommandBuilder.build_env(options)
 
@@ -79,17 +98,22 @@ defmodule ClaudeSDK.Transport.Subprocess do
       {:cd, cd}
     ]
 
-    port = Port.open({:spawn_executable, cli_path}, port_opts)
+    try do
+      port = Port.open({:spawn_executable, cli_path}, port_opts)
 
-    state = %__MODULE__{
-      port: port,
-      caller: caller,
-      buffer: LineBuffer.new(),
-      cli_path: cli_path,
-      options: options
-    }
+      state = %__MODULE__{
+        port: port,
+        caller: caller,
+        buffer: LineBuffer.new(),
+        cli_path: cli_path,
+        options: options
+      }
 
-    {:ok, state}
+      {:ok, state}
+    rescue
+      e in [ErlangError, ArgumentError, SystemLimitError] ->
+        {:stop, Exception.message(e)}
+    end
   end
 
   @impl true
@@ -146,6 +170,6 @@ defmodule ClaudeSDK.Transport.Subprocess do
 
     :ok
   rescue
-    _ -> :ok
+    ArgumentError -> :ok
   end
 end

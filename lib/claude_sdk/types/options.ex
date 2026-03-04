@@ -126,11 +126,6 @@ defmodule ClaudeSDK.Types.Options do
   - `init_timeout_ms` — Timeout in ms for the initialization handshake (default: 30_000).
   - `message_timeout_ms` — Timeout in ms for receiving messages during streaming (default: 120_000).
 
-  ### Stderr
-
-  - `stderr` — Callback invoked with stderr output from the CLI. Note: Erlang ports do not
-    natively separate stderr. To capture stderr, use the CLI's `--log-file` option to redirect
-    logs to a file, or provide a shell wrapper that separates streams.
   """
 
   @type permission_mode :: :default | :accept_edits | :plan | :bypass_permissions
@@ -231,9 +226,6 @@ defmodule ClaudeSDK.Types.Options do
           init_timeout_ms: pos_integer(),
           message_timeout_ms: pos_integer(),
 
-          # Stderr callback
-          stderr: (String.t() -> any()) | nil,
-
           # Extra CLI args (escape hatch)
           extra_args: [String.t()]
         }
@@ -277,7 +269,6 @@ defmodule ClaudeSDK.Types.Options do
             enable_file_checkpointing: false,
             init_timeout_ms: 30_000,
             message_timeout_ms: 120_000,
-            stderr: nil,
             extra_args: []
 
   @valid_permission_modes [nil, :default, :accept_edits, :plan, :bypass_permissions]

@@ -33,6 +33,7 @@ defmodule ClaudeSDK.Client do
 
   @default_init_timeout 30_000
   @default_message_timeout 120_000
+  @default_control_timeout 30_000
 
   defstruct [
     :options,
@@ -40,6 +41,7 @@ defmodule ClaudeSDK.Client do
     :control_handlers,
     :session_id,
     :active_caller,
+    :control_timer,
     state: :disconnected
   ]
 
@@ -167,6 +169,7 @@ defmodule ClaudeSDK.Client do
 
   @impl true
   def init(opts) do
+    Process.flag(:trap_exit, true)
     options = Keyword.get(opts, :options, %Options{})
 
     state = %__MODULE__{
@@ -214,6 +217,10 @@ defmodule ClaudeSDK.Client do
     {:reply, {:error, {:invalid_state, s}}, state}
   end
 
+  def handle_call(:finish_query, _from, %{state: :streaming} = state) do
+    {:reply, :ok, %{state | state: :connected, active_caller: nil}}
+  end
+
   def handle_call(:finish_query, _from, state) do
     {:reply, :ok, %{state | active_caller: nil}}
   end
@@ -232,7 +239,8 @@ defmodule ClaudeSDK.Client do
 
     Subprocess.send_message(state.subprocess, rewind_request)
 
-    {:noreply, %{state | state: :awaiting_rewind, active_caller: from}}
+    timer = Process.send_after(self(), :control_timeout, @default_control_timeout)
+    {:noreply, %{state | state: :awaiting_rewind, active_caller: from, control_timer: timer}}
   end
 
   def handle_call({:rewind_files, _}, _from, %{state: s} = state) do
@@ -295,7 +303,10 @@ defmodule ClaudeSDK.Client do
 
     Subprocess.send_message(state.subprocess, control_msg)
 
-    {:noreply, %{state | state: :awaiting_control_response, active_caller: from}}
+    timer = Process.send_after(self(), :control_timeout, @default_control_timeout)
+
+    {:noreply,
+     %{state | state: :awaiting_control_response, active_caller: from, control_timer: timer}}
   end
 
   def handle_call(:get_mcp_status, _from, %{state: s} = state) do
@@ -313,7 +324,10 @@ defmodule ClaudeSDK.Client do
 
     Subprocess.send_message(state.subprocess, control_msg)
 
-    {:noreply, %{state | state: :awaiting_control_response, active_caller: from}}
+    timer = Process.send_after(self(), :control_timeout, @default_control_timeout)
+
+    {:noreply,
+     %{state | state: :awaiting_control_response, active_caller: from, control_timer: timer}}
   end
 
   def handle_call({:reconnect_mcp_server, _}, _from, %{state: s} = state) do
@@ -331,7 +345,10 @@ defmodule ClaudeSDK.Client do
 
     Subprocess.send_message(state.subprocess, control_msg)
 
-    {:noreply, %{state | state: :awaiting_control_response, active_caller: from}}
+    timer = Process.send_after(self(), :control_timeout, @default_control_timeout)
+
+    {:noreply,
+     %{state | state: :awaiting_control_response, active_caller: from, control_timer: timer}}
   end
 
   def handle_call({:toggle_mcp_server, _, _}, _from, %{state: s} = state) do
@@ -355,17 +372,19 @@ defmodule ClaudeSDK.Client do
         {:claude_message, %{"type" => "control_response"} = raw},
         %{state: :awaiting_rewind} = state
       ) do
+    cancel_control_timer(state)
     GenServer.reply(state.active_caller, parse_rewind_response(raw))
-    {:noreply, %{state | state: :connected, active_caller: nil}}
+    {:noreply, %{state | state: :connected, active_caller: nil, control_timer: nil}}
   end
 
   def handle_info(
         {:claude_message, %{"type" => "control_response"} = raw},
         %{state: :awaiting_control_response} = state
       ) do
+    cancel_control_timer(state)
     response = raw["response"] || %{}
     GenServer.reply(state.active_caller, {:ok, response})
-    {:noreply, %{state | state: :connected, active_caller: nil}}
+    {:noreply, %{state | state: :connected, active_caller: nil, control_timer: nil}}
   end
 
   def handle_info({:claude_message, %{"type" => "result"} = raw}, %{state: :streaming} = state) do
@@ -391,11 +410,27 @@ defmodule ClaudeSDK.Client do
   end
 
   def handle_info({:claude_exit, reason}, state) do
-    if state.active_caller && is_pid(state.active_caller) do
-      send(state.active_caller, {:client_exit, reason})
-    end
+    cancel_control_timer(state)
+    notify_caller_of_exit(state.active_caller, state.state, reason)
 
-    {:noreply, %{state | state: :disconnected, subprocess: nil}}
+    {:noreply,
+     %{state | state: :disconnected, subprocess: nil, active_caller: nil, control_timer: nil}}
+  end
+
+  def handle_info(:control_timeout, %{state: awaiting} = state)
+      when awaiting in [:awaiting_rewind, :awaiting_control_response] do
+    GenServer.reply(state.active_caller, {:error, :control_timeout})
+    {:noreply, %{state | state: :connected, active_caller: nil, control_timer: nil}}
+  end
+
+  def handle_info(:control_timeout, state) do
+    # Timer fired after response already arrived; ignore
+    {:noreply, state}
+  end
+
+  def handle_info({:EXIT, _pid, _reason}, state) do
+    # Subprocess exited — already handled via {:claude_exit, _} messages
+    {:noreply, state}
   end
 
   def handle_info(msg, state) do
@@ -411,7 +446,7 @@ defmodule ClaudeSDK.Client do
 
     :ok
   rescue
-    _ -> :ok
+    ArgumentError -> :ok
   end
 
   def terminate(_reason, _state), do: :ok
@@ -457,9 +492,12 @@ defmodule ClaudeSDK.Client do
              %{state | state: :connected, subprocess: pid, control_handlers: control_handlers}}
 
           {:error, reason} ->
-            Subprocess.stop(pid)
+            safe_stop(pid)
             {:error, reason}
         end
+
+      {:error, %ClaudeSDK.CLINotFoundError{} = e} ->
+        {:error, e}
 
       {:error, reason} ->
         {:error, reason}
@@ -474,9 +512,13 @@ defmodule ClaudeSDK.Client do
       {:claude_message, %{"type" => "system"}} ->
         receive do
           {:claude_message, %{"type" => "control_response"}} -> :ok
+          {:claude_exit, reason} -> {:error, {:cli_exited, reason}}
         after
           timeout -> {:error, :init_timeout}
         end
+
+      {:claude_exit, reason} ->
+        {:error, {:cli_exited, reason}}
     after
       timeout -> {:error, :init_timeout}
     end
@@ -484,14 +526,14 @@ defmodule ClaudeSDK.Client do
 
   defp start_query(client, prompt) do
     case GenServer.call(client, {:start_query, prompt, self()}) do
-      {:ok, message_timeout} -> {:streaming, message_timeout}
+      {:ok, message_timeout} -> {:streaming, message_timeout, client}
       {:error, reason} -> raise "Failed to start query: #{inspect(reason)}"
     end
   end
 
   defp receive_client_messages(:halt, _client), do: {:halt, :done}
 
-  defp receive_client_messages({:streaming, message_timeout}, _client) do
+  defp receive_client_messages({:streaming, message_timeout, client}, _client) do
     receive do
       {:client_message, raw} ->
         case ClaudeSDK.MessageParser.parse(raw) do
@@ -499,10 +541,10 @@ defmodule ClaudeSDK.Client do
             {[msg], :halt}
 
           {:ok, msg} ->
-            {[msg], {:streaming, message_timeout}}
+            {[msg], {:streaming, message_timeout, client}}
 
           {:error, _} ->
-            {[], {:streaming, message_timeout}}
+            {[], {:streaming, message_timeout, client}}
         end
 
       {:client_exit, _reason} ->
@@ -530,4 +572,41 @@ defmodule ClaudeSDK.Client do
   defp parse_rewind_response(%{"response" => %{"success" => true}}), do: :ok
   defp parse_rewind_response(%{"response" => %{"error" => error}}), do: {:error, error}
   defp parse_rewind_response(_), do: :ok
+
+  defp cancel_control_timer(%{control_timer: ref}) when is_reference(ref) do
+    Process.cancel_timer(ref)
+    # Flush the timeout message if it already arrived
+    receive do
+      :control_timeout -> :ok
+    after
+      0 -> :ok
+    end
+  end
+
+  defp cancel_control_timer(_state), do: :ok
+
+  # Notify the active caller about subprocess exit, handling both
+  # pid callers (streaming) and GenServer.reply tuples (awaiting states).
+  defp safe_stop(pid) do
+    if Process.alive?(pid), do: Subprocess.stop(pid)
+  catch
+    :exit, _ -> :ok
+  end
+
+  defp notify_caller_of_exit(nil, _state, _reason), do: :ok
+
+  defp notify_caller_of_exit(caller, _state, reason) when is_pid(caller) do
+    send(caller, {:client_exit, reason})
+  rescue
+    ArgumentError -> :ok
+  end
+
+  defp notify_caller_of_exit(caller, state, reason)
+       when state in [:awaiting_rewind, :awaiting_control_response] do
+    GenServer.reply(caller, {:error, {:cli_exited, reason}})
+  rescue
+    ArgumentError -> :ok
+  end
+
+  defp notify_caller_of_exit(_caller, _state, _reason), do: :ok
 end

@@ -119,7 +119,17 @@ defmodule ClaudeSDK do
 
     control_handlers = ControlRouter.build_handlers(handler_opts)
 
-    {:ok, pid} = Subprocess.start_link(caller: self(), options: opts)
+    {:ok, pid} =
+      case Subprocess.start(caller: self(), options: opts) do
+        {:ok, pid} ->
+          {:ok, pid}
+
+        {:error, %ClaudeSDK.CLINotFoundError{} = e} ->
+          raise e
+
+        {:error, reason} ->
+          raise ClaudeSDK.TransportError, reason: reason
+      end
 
     # Send initialize control request
     init_request = %{
@@ -144,12 +154,23 @@ defmodule ClaudeSDK do
       {:claude_message, %{"type" => "system"}} ->
         # Some CLI versions send system init before control_response
         receive do
-          {:claude_message, %{"type" => "control_response"}} -> :ok
+          {:claude_message, %{"type" => "control_response"}} ->
+            :ok
+
+          {:claude_exit, reason} ->
+            raise ClaudeSDK.TransportError,
+              reason: reason,
+              message: "CLI exited during initialization: #{inspect(reason)}"
         after
           init_timeout ->
             Subprocess.stop(pid)
             raise ClaudeSDK.TimeoutError, timeout_ms: init_timeout
         end
+
+      {:claude_exit, reason} ->
+        raise ClaudeSDK.TransportError,
+          reason: reason,
+          message: "CLI exited during initialization: #{inspect(reason)}"
     after
       init_timeout ->
         Subprocess.stop(pid)
