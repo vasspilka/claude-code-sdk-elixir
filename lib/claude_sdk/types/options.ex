@@ -133,6 +133,10 @@ defmodule ClaudeSDK.Types.Options do
   @type can_use_tool_callback ::
           (tool_name :: String.t(), input :: map() ->
              :allow | {:allow, map()} | {:deny, String.t()})
+          | (tool_name :: String.t(),
+             input :: map(),
+             context :: ClaudeSDK.Types.ToolPermissionContext.t() ->
+               :allow | {:allow, map()} | {:deny, String.t()})
 
   @type t :: %__MODULE__{
           # CLI path override (nil = auto-discover)
@@ -162,6 +166,9 @@ defmodule ClaudeSDK.Types.Options do
           # Permission callback
           can_use_tool: can_use_tool_callback() | nil,
 
+          # Permission prompt tool name
+          permission_prompt_tool_name: String.t() | nil,
+
           # Session management
           continue: boolean(),
           resume: String.t() | nil,
@@ -179,7 +186,7 @@ defmodule ClaudeSDK.Types.Options do
           effort: String.t() | nil,
 
           # Thinking mode
-          thinking: map() | nil,
+          thinking: map() | ClaudeSDK.Types.ThinkingConfig.t() | nil,
 
           # Structured output
           json_schema: map() | nil,
@@ -190,7 +197,7 @@ defmodule ClaudeSDK.Types.Options do
           setting_sources: [String.t()] | nil,
 
           # Sandbox
-          sandbox: map() | nil,
+          sandbox: map() | ClaudeSDK.Types.SandboxSettings.t() | nil,
 
           # Plugins
           plugins: [map()] | nil,
@@ -214,7 +221,7 @@ defmodule ClaudeSDK.Types.Options do
           hooks: map(),
 
           # Agents (sent via initialize, not CLI args)
-          agents: map(),
+          agents: map() | [ClaudeSDK.Types.AgentDefinition.t()],
 
           # Environment variables
           env: map(),
@@ -243,6 +250,7 @@ defmodule ClaudeSDK.Types.Options do
             max_thinking_tokens: nil,
             permission_mode: nil,
             can_use_tool: nil,
+            permission_prompt_tool_name: nil,
             continue: false,
             resume: nil,
             fork_session: false,

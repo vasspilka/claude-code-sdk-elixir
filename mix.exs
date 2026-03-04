@@ -8,7 +8,19 @@ defmodule ClaudeSDK.MixProject do
       elixir: "~> 1.17",
       start_permanent: Mix.env() == :prod,
       elixirc_paths: elixirc_paths(Mix.env()),
-      deps: deps()
+      deps: deps(),
+      description: "Elixir SDK for the Claude Code CLI",
+      package: package(),
+      source_url: "https://github.com/vasspilka/claude-code-sdk-elixir"
+    ]
+  end
+
+  defp package do
+    [
+      licenses: ["MIT"],
+      links: %{
+        "GitHub" => "https://github.com/vasspilka/claude-code-sdk-elixir"
+      }
     ]
   end
 

@@ -42,7 +42,7 @@ Live tests (tagged `@tag :live`) require the Claude CLI installed and are exclud
 
 ### Types (`lib/claude_sdk/types/`)
 
-- **`Options`** — 28-field config struct mapping to CLI flags (model, permissions, MCP, session, limits, etc.)
+- **`Options`** — Config struct mapping to CLI flags (model, permissions, MCP, session, limits, etc.)
 - **`Messages`** — AssistantMessage, UserMessage, SystemMessage, ResultMessage, StreamEvent, ControlRequest/Response
 - **`ContentBlocks`** — TextBlock, ThinkingBlock, ToolUseBlock, ToolResultBlock
 

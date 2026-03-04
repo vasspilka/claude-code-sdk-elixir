@@ -76,7 +76,7 @@ defmodule ClaudeSDK.ClientTest do
       opts = %Options{cli_path: @mock_cli_path}
       {:ok, client} = Client.start_link(options: opts)
 
-      assert_raise RuntimeError, ~r/Failed to start query/, fn ->
+      assert_raise ClaudeSDK.QueryError, ~r/Failed to start query/, fn ->
         Client.query(client, "Hello") |> Enum.to_list()
       end
 

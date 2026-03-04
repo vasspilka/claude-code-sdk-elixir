@@ -36,7 +36,7 @@ defmodule ClaudeSDK.Transport.CommandBuilder do
     |> maybe_add("--max-budget-usd", opts.max_budget_usd)
     |> maybe_add("--max-thinking-tokens", opts.max_thinking_tokens)
     |> add_permission_mode(opts.permission_mode)
-    |> add_permission_prompt_tool(opts.can_use_tool)
+    |> add_permission_prompt_tool(opts.can_use_tool, opts.permission_prompt_tool_name)
     |> maybe_add_flag("--continue", opts.continue)
     |> maybe_add("--resume", opts.resume)
     |> maybe_add_flag("--fork-session", opts.fork_session)
@@ -74,10 +74,12 @@ defmodule ClaudeSDK.Transport.CommandBuilder do
 
   # Private helpers
 
-  defp add_permission_prompt_tool(args, nil), do: args
+  defp add_permission_prompt_tool(args, nil, _name), do: args
 
-  defp add_permission_prompt_tool(args, callback) when is_function(callback, 2) do
-    args ++ ["--permission-prompt-tool", "stdio"]
+  defp add_permission_prompt_tool(args, callback, name)
+       when is_function(callback, 2) or is_function(callback, 3) do
+    tool_name = name || "stdio"
+    args ++ ["--permission-prompt-tool", tool_name]
   end
 
   defp add_sdk_mcp_servers(args, []), do: args
@@ -119,6 +121,13 @@ defmodule ClaudeSDK.Transport.CommandBuilder do
   end
 
   defp add_json_opt(args, _flag, nil), do: args
+
+  defp add_json_opt(args, flag, %ClaudeSDK.Types.ThinkingConfig{} = config),
+    do: args ++ [flag, Jason.encode!(ClaudeSDK.Types.ThinkingConfig.to_map(config))]
+
+  defp add_json_opt(args, flag, %ClaudeSDK.Types.SandboxSettings{} = settings),
+    do: args ++ [flag, Jason.encode!(ClaudeSDK.Types.SandboxSettings.to_map(settings))]
+
   defp add_json_opt(args, flag, map) when is_map(map), do: args ++ [flag, Jason.encode!(map)]
 
   defp add_mcp_config(args, nil), do: args

@@ -137,6 +137,16 @@ defmodule ClaudeSDK.Client do
   end
 
   @doc """
+  Get CLI server info.
+
+  Returns a server info map from the CLI. Can only be called when connected.
+  """
+  @spec get_server_info(GenServer.server()) :: {:ok, map()} | {:error, term()}
+  def get_server_info(client) do
+    GenServer.call(client, :get_server_info, @default_init_timeout)
+  end
+
+  @doc """
   Reconnect a failed MCP server by name.
 
   Can only be called when the client is in `:connected` state.
@@ -163,6 +173,40 @@ defmodule ClaudeSDK.Client do
   @spec close(GenServer.server()) :: :ok
   def close(client) do
     GenServer.stop(client, :normal)
+  end
+
+  @doc """
+  Start a client, run a function, and ensure cleanup.
+
+  Equivalent to Python SDK's `async with ClaudeSDKClient() as client:`.
+  Starts the client, connects it, runs the callback, and closes it —
+  even if the callback raises.
+
+  ## Example
+
+      ClaudeSDK.Client.with_client(
+        [options: %Options{permission_mode: :bypass_permissions}],
+        fn client ->
+          ClaudeSDK.Client.query(client, "Hello") |> Enum.to_list()
+        end
+      )
+  """
+  @spec with_client(keyword(), (GenServer.server() -> result)) :: result when result: var
+  def with_client(opts \\ [], fun) when is_function(fun, 1) do
+    {:ok, client} = start_link(opts)
+
+    try do
+      case connect(client) do
+        :ok -> fun.(client)
+        {:error, reason} -> raise ClaudeSDK.TransportError, reason: reason
+      end
+    after
+      try do
+        close(client)
+      catch
+        :exit, _ -> :ok
+      end
+    end
   end
 
   # GenServer callbacks
@@ -313,6 +357,27 @@ defmodule ClaudeSDK.Client do
     {:reply, {:error, {:invalid_state, s}}, state}
   end
 
+  def handle_call(:get_server_info, from, %{state: :connected} = state) do
+    request_id = ClaudeSDK.generate_request_id()
+
+    control_msg = %{
+      type: "control_request",
+      request_id: request_id,
+      request: %{subtype: "get_server_info"}
+    }
+
+    Subprocess.send_message(state.subprocess, control_msg)
+
+    timer = Process.send_after(self(), :control_timeout, @default_control_timeout)
+
+    {:noreply,
+     %{state | state: :awaiting_control_response, active_caller: from, control_timer: timer}}
+  end
+
+  def handle_call(:get_server_info, _from, %{state: s} = state) do
+    {:reply, {:error, {:invalid_state, s}}, state}
+  end
+
   def handle_call({:reconnect_mcp_server, server_name}, from, %{state: :connected} = state) do
     request_id = ClaudeSDK.generate_request_id()
 
@@ -456,6 +521,15 @@ defmodule ClaudeSDK.Client do
   defp do_connect(state) do
     opts = state.options
 
+    case Options.validate(opts) do
+      :ok -> do_connect_validated(state)
+      {:error, reason} -> {:error, {:invalid_options, reason}}
+    end
+  end
+
+  defp do_connect_validated(state) do
+    opts = state.options
+
     mcp_tool_index =
       case opts.mcp_servers do
         [] -> %{}
@@ -478,7 +552,7 @@ defmodule ClaudeSDK.Client do
           request: %{
             subtype: "initialize",
             hooks: opts.hooks,
-            agents: opts.agents
+            agents: normalize_agents(opts.agents)
           }
         }
 
@@ -505,29 +579,32 @@ defmodule ClaudeSDK.Client do
   end
 
   defp wait_for_init(timeout) do
+    deadline = System.monotonic_time(:millisecond) + timeout
+    wait_for_init_loop(deadline)
+  end
+
+  defp wait_for_init_loop(deadline) do
+    remaining = max(deadline - System.monotonic_time(:millisecond), 0)
+
     receive do
       {:claude_message, %{"type" => "control_response"}} ->
         :ok
 
-      {:claude_message, %{"type" => "system"}} ->
-        receive do
-          {:claude_message, %{"type" => "control_response"}} -> :ok
-          {:claude_exit, reason} -> {:error, {:cli_exited, reason}}
-        after
-          timeout -> {:error, :init_timeout}
-        end
+      {:claude_message, %{"type" => _}} ->
+        # Skip non-control_response messages (system, etc.)
+        wait_for_init_loop(deadline)
 
       {:claude_exit, reason} ->
         {:error, {:cli_exited, reason}}
     after
-      timeout -> {:error, :init_timeout}
+      remaining -> {:error, :init_timeout}
     end
   end
 
   defp start_query(client, prompt) do
     case GenServer.call(client, {:start_query, prompt, self()}) do
       {:ok, message_timeout} -> {:streaming, message_timeout, client}
-      {:error, reason} -> raise "Failed to start query: #{inspect(reason)}"
+      {:error, reason} -> raise ClaudeSDK.QueryError, reason: reason
     end
   end
 
@@ -609,4 +686,17 @@ defmodule ClaudeSDK.Client do
   end
 
   defp notify_caller_of_exit(_caller, _state, _reason), do: :ok
+
+  defp normalize_agents(agents) when is_list(agents) do
+    Enum.map(agents, fn
+      %ClaudeSDK.Types.AgentDefinition{} = agent ->
+        ClaudeSDK.Types.AgentDefinition.to_map(agent)
+
+      agent when is_map(agent) ->
+        agent
+    end)
+  end
+
+  defp normalize_agents(agents) when is_map(agents), do: agents
+  defp normalize_agents(_), do: %{}
 end

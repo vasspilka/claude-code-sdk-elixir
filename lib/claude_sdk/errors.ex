@@ -73,6 +73,28 @@ defmodule ClaudeSDK.ProtocolError do
   end
 end
 
+defmodule ClaudeSDK.QueryError do
+  @moduledoc """
+  Raised when starting a query fails.
+
+  This can happen when the Client is in an invalid state (e.g. not connected,
+  already streaming) or the subprocess rejects the query.
+
+  ## Fields
+
+  - `message` — Human-readable error message.
+  - `reason` — The underlying error term.
+  """
+  defexception [:message, :reason]
+
+  @impl true
+  def exception(opts) do
+    reason = Keyword.get(opts, :reason, :unknown)
+    message = Keyword.get(opts, :message, "Failed to start query: #{inspect(reason)}")
+    %__MODULE__{message: message, reason: reason}
+  end
+end
+
 defmodule ClaudeSDK.TimeoutError do
   @moduledoc """
   Raised when a CLI operation times out.

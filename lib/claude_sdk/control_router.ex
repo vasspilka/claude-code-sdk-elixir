@@ -102,12 +102,26 @@ defmodule ClaudeSDK.ControlRouter do
   defp maybe_add_permission_handler(handlers, %{can_use_tool: nil}), do: handlers
 
   defp maybe_add_permission_handler(handlers, %{can_use_tool: callback})
-       when is_function(callback, 2) do
+       when is_function(callback, 2) or is_function(callback, 3) do
     handler = fn request ->
       tool_name = request["tool_name"] || ""
       input = request["input"] || %{}
 
-      case callback.(tool_name, input) do
+      result =
+        if is_function(callback, 3) do
+          context = %ClaudeSDK.Types.ToolPermissionContext{
+            tool_name: tool_name,
+            input: input,
+            request_id: request["request_id"] || "",
+            raw_request: request
+          }
+
+          callback.(tool_name, input, context)
+        else
+          callback.(tool_name, input)
+        end
+
+      case result do
         :allow -> {:allow, %{}}
         {:allow, permissions} when is_map(permissions) -> {:allow, permissions}
         :deny -> {:deny, "Permission denied"}

@@ -84,11 +84,17 @@ defmodule ClaudeSDK do
   end
 
   def query(prompt, %Options{} = opts) do
-    Stream.resource(
-      fn -> start_subprocess(prompt, opts) end,
-      &receive_messages/1,
-      &cleanup/1
-    )
+    case Options.validate(opts) do
+      :ok ->
+        Stream.resource(
+          fn -> start_subprocess(prompt, opts) end,
+          &receive_messages/1,
+          &cleanup/1
+        )
+
+      {:error, reason} ->
+        raise ArgumentError, reason
+    end
   end
 
   @doc """
@@ -102,9 +108,7 @@ defmodule ClaudeSDK do
   end
 
   @doc false
-  def generate_request_id do
-    "req_" <> Base.encode16(:crypto.strong_rand_bytes(8), case: :lower)
-  end
+  defdelegate generate_request_id, to: ClaudeSDK.Internal
 
   # Stream.resource start_fun: spawn subprocess and send initialization + prompt
   defp start_subprocess(prompt, opts) do
@@ -138,7 +142,7 @@ defmodule ClaudeSDK do
       request: %{
         subtype: "initialize",
         hooks: opts.hooks,
-        agents: opts.agents
+        agents: normalize_agents(opts.agents)
       }
     }
 
@@ -146,36 +150,10 @@ defmodule ClaudeSDK do
 
     init_timeout = opts.init_timeout_ms || @default_init_timeout
 
-    # Wait for control_response acknowledging initialization
-    receive do
-      {:claude_message, %{"type" => "control_response"}} ->
-        :ok
-
-      {:claude_message, %{"type" => "system"}} ->
-        # Some CLI versions send system init before control_response
-        receive do
-          {:claude_message, %{"type" => "control_response"}} ->
-            :ok
-
-          {:claude_exit, reason} ->
-            raise ClaudeSDK.TransportError,
-              reason: reason,
-              message: "CLI exited during initialization: #{inspect(reason)}"
-        after
-          init_timeout ->
-            Subprocess.stop(pid)
-            raise ClaudeSDK.TimeoutError, timeout_ms: init_timeout
-        end
-
-      {:claude_exit, reason} ->
-        raise ClaudeSDK.TransportError,
-          reason: reason,
-          message: "CLI exited during initialization: #{inspect(reason)}"
-    after
-      init_timeout ->
-        Subprocess.stop(pid)
-        raise ClaudeSDK.TimeoutError, timeout_ms: init_timeout
-    end
+    # Wait for control_response acknowledging initialization.
+    # Skip any non-control_response messages (e.g. system messages) that
+    # the CLI may send before the handshake completes.
+    wait_for_init_response(pid, init_timeout)
 
     # Send the user prompt
     user_message = %{
@@ -250,7 +228,6 @@ defmodule ClaudeSDK do
 
   # Stream.resource after_fun: clean up subprocess
   defp cleanup(:done), do: :ok
-  defp cleanup(:timeout), do: :ok
 
   defp cleanup(%{subprocess: pid}) do
     if Process.alive?(pid) do
@@ -258,13 +235,48 @@ defmodule ClaudeSDK do
     end
   end
 
-  defp cleanup(pid) when is_pid(pid) do
-    if Process.alive?(pid) do
-      Subprocess.stop(pid)
+  defp cleanup(_), do: :ok
+
+  defp wait_for_init_response(pid, timeout) do
+    deadline = System.monotonic_time(:millisecond) + timeout
+
+    wait_for_init_loop(pid, deadline)
+  end
+
+  defp wait_for_init_loop(pid, deadline) do
+    remaining = max(deadline - System.monotonic_time(:millisecond), 0)
+
+    receive do
+      {:claude_message, %{"type" => "control_response"}} ->
+        :ok
+
+      {:claude_message, %{"type" => _}} ->
+        # Skip non-control_response messages (system, etc.)
+        wait_for_init_loop(pid, deadline)
+
+      {:claude_exit, reason} ->
+        raise ClaudeSDK.TransportError,
+          reason: reason,
+          message: "CLI exited during initialization: #{inspect(reason)}"
+    after
+      remaining ->
+        Subprocess.stop(pid)
+        raise ClaudeSDK.TimeoutError, timeout_ms: remaining
     end
   end
 
-  defp cleanup(_), do: :ok
+  defp normalize_agents(agents) when is_list(agents) do
+    Enum.map(agents, fn
+      %ClaudeSDK.Types.AgentDefinition{} = agent ->
+        ClaudeSDK.Types.AgentDefinition.to_map(agent)
+
+      agent when is_map(agent) ->
+        agent
+    end)
+  end
+
+  defp normalize_agents(agents) when is_map(agents), do: agents
+  defp normalize_agents(_), do: %{}
 
   defp build_mcp_tool_index([]), do: %{}
   defp build_mcp_tool_index(nil), do: %{}
