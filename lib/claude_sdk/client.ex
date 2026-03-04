@@ -31,8 +31,12 @@ defmodule ClaudeSDK.Client do
 
   require Logger
 
+  # 30s is generous for CLI startup + initialize handshake
   @default_init_timeout 30_000
+  # 120s allows for extended thinking and large responses;
+  # override via Options.message_timeout_ms for longer operations
   @default_message_timeout 120_000
+  # 30s for control request/response round-trips (rewind, MCP status, etc.)
   @default_control_timeout 30_000
 
   defstruct [
@@ -504,17 +508,15 @@ defmodule ClaudeSDK.Client do
   end
 
   @impl true
-  def terminate(_reason, %{subprocess: pid}) when is_pid(pid) do
-    if Process.alive?(pid) do
-      Subprocess.stop(pid)
+  def terminate(_reason, state) do
+    cancel_control_timer(state)
+
+    if is_pid(state.subprocess) do
+      safe_stop(state.subprocess)
     end
 
     :ok
-  rescue
-    ArgumentError -> :ok
   end
-
-  def terminate(_reason, _state), do: :ok
 
   # Private
 
@@ -685,7 +687,14 @@ defmodule ClaudeSDK.Client do
     ArgumentError -> :ok
   end
 
-  defp notify_caller_of_exit(_caller, _state, _reason), do: :ok
+  defp notify_caller_of_exit(caller, state, reason) do
+    Logger.warning(
+      "Unexpected caller state in notify_caller_of_exit: " <>
+        "caller=#{inspect(caller)}, state=#{inspect(state)}, reason=#{inspect(reason)}"
+    )
+
+    :ok
+  end
 
   defp normalize_agents(agents) when is_list(agents) do
     Enum.map(agents, fn

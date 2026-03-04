@@ -122,11 +122,27 @@ defmodule ClaudeSDK.ControlRouter do
         end
 
       case result do
-        :allow -> {:allow, %{}}
-        {:allow, permissions} when is_map(permissions) -> {:allow, permissions}
-        :deny -> {:deny, "Permission denied"}
-        {:deny, reason} when is_binary(reason) -> {:deny, reason}
-        {:deny, reason} -> {:deny, to_string(reason)}
+        :allow ->
+          {:allow, %{}}
+
+        {:allow, permissions} when is_map(permissions) ->
+          {:allow, permissions}
+
+        :deny ->
+          {:deny, "Permission denied"}
+
+        {:deny, reason} when is_binary(reason) ->
+          {:deny, reason}
+
+        {:deny, reason} ->
+          {:deny, to_string(reason)}
+
+        unexpected ->
+          Logger.warning(
+            "can_use_tool callback returned unexpected value: #{inspect(unexpected)}"
+          )
+
+          {:deny, "Permission callback returned invalid value"}
       end
     end
 

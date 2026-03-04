@@ -55,7 +55,10 @@ defmodule ClaudeSDK do
   alias ClaudeSDK.Transport.Subprocess
   alias ClaudeSDK.Types.Options
 
+  # 30s is generous for CLI startup + initialize handshake
   @default_init_timeout 30_000
+  # 120s allows for extended thinking and large responses;
+  # override via Options.message_timeout_ms for longer operations
   @default_message_timeout 120_000
 
   @doc """
@@ -240,10 +243,10 @@ defmodule ClaudeSDK do
   defp wait_for_init_response(pid, timeout) do
     deadline = System.monotonic_time(:millisecond) + timeout
 
-    wait_for_init_loop(pid, deadline)
+    wait_for_init_loop(pid, deadline, timeout)
   end
 
-  defp wait_for_init_loop(pid, deadline) do
+  defp wait_for_init_loop(pid, deadline, original_timeout) do
     remaining = max(deadline - System.monotonic_time(:millisecond), 0)
 
     receive do
@@ -252,7 +255,7 @@ defmodule ClaudeSDK do
 
       {:claude_message, %{"type" => _}} ->
         # Skip non-control_response messages (system, etc.)
-        wait_for_init_loop(pid, deadline)
+        wait_for_init_loop(pid, deadline, original_timeout)
 
       {:claude_exit, reason} ->
         raise ClaudeSDK.TransportError,
@@ -261,7 +264,7 @@ defmodule ClaudeSDK do
     after
       remaining ->
         Subprocess.stop(pid)
-        raise ClaudeSDK.TimeoutError, timeout_ms: remaining
+        raise ClaudeSDK.TimeoutError, timeout_ms: original_timeout
     end
   end
 

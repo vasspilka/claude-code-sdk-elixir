@@ -7,6 +7,8 @@ defmodule ClaudeSDK.MCP.Server do
   from the CLI.
   """
 
+  require Logger
+
   alias ClaudeSDK.MCP.Tool
 
   @doc """
@@ -188,6 +190,10 @@ defmodule ClaudeSDK.MCP.Server do
   end
 
   defp maybe_truncate(text) when byte_size(text) > @max_result_bytes do
+    original_size = byte_size(text)
+
+    Logger.warning("MCP tool result truncated: #{original_size} bytes exceeds 1MB limit")
+
     truncated = binary_part(text, 0, @max_result_bytes)
     truncated <> "\n... [truncated: result exceeded 1MB limit]"
   end
