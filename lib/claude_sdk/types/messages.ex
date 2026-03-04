@@ -121,6 +121,7 @@ defmodule ClaudeSDK.Types.ResultMessage do
   - `total_cost_usd` — Total cost in USD.
   - `usage` — Token usage breakdown map.
   - `result` — Final text result string, or structured JSON when using `json_schema`.
+  - `structured_output` — Parsed structured output map when using `output_format`, or nil.
   """
 
   @type t :: %__MODULE__{
@@ -133,7 +134,8 @@ defmodule ClaudeSDK.Types.ResultMessage do
           session_id: String.t() | nil,
           total_cost_usd: float() | nil,
           usage: map(),
-          result: String.t() | nil
+          result: String.t() | nil,
+          structured_output: map() | nil
         }
 
   defstruct type: :result,
@@ -145,7 +147,8 @@ defmodule ClaudeSDK.Types.ResultMessage do
             session_id: nil,
             total_cost_usd: nil,
             usage: %{},
-            result: nil
+            result: nil,
+            structured_output: nil
 end
 
 defmodule ClaudeSDK.Types.StreamEvent do
@@ -222,4 +225,100 @@ defmodule ClaudeSDK.Types.ControlResponse do
         }
 
   defstruct type: :control_response, response: %{}
+end
+
+defmodule ClaudeSDK.Types.TaskStartedMessage do
+  @moduledoc """
+  Emitted when a subtask starts execution.
+
+  ## Fields
+
+  - `task_id` — Unique identifier for the task.
+  - `description` — Human-readable description of the task.
+  - `uuid` — Message UUID.
+  - `session_id` — Session this task belongs to.
+  - `tool_use_id` — Tool use ID that triggered this task.
+  - `task_type` — Type of task (e.g. `"agent"`).
+  """
+
+  @type t :: %__MODULE__{
+          type: :task_started,
+          task_id: String.t() | nil,
+          description: String.t() | nil,
+          uuid: String.t() | nil,
+          session_id: String.t() | nil,
+          tool_use_id: String.t() | nil,
+          task_type: String.t() | nil
+        }
+
+  defstruct type: :task_started,
+            task_id: nil,
+            description: nil,
+            uuid: nil,
+            session_id: nil,
+            tool_use_id: nil,
+            task_type: nil
+end
+
+defmodule ClaudeSDK.Types.TaskProgressMessage do
+  @moduledoc """
+  Emitted periodically during subtask execution with progress updates.
+
+  ## Fields
+
+  - `task_id` — Unique identifier for the task.
+  - `description` — Human-readable description of current progress.
+  - `usage` — Token usage map with keys like `"total_tokens"`, `"tool_uses"`, `"duration_ms"`.
+  - `uuid` — Message UUID.
+  - `session_id` — Session this task belongs to.
+  - `last_tool_name` — Name of the most recently used tool.
+  """
+
+  @type t :: %__MODULE__{
+          type: :task_progress,
+          task_id: String.t() | nil,
+          description: String.t() | nil,
+          usage: map(),
+          uuid: String.t() | nil,
+          session_id: String.t() | nil,
+          last_tool_name: String.t() | nil
+        }
+
+  defstruct type: :task_progress,
+            task_id: nil,
+            description: nil,
+            usage: %{},
+            uuid: nil,
+            session_id: nil,
+            last_tool_name: nil
+end
+
+defmodule ClaudeSDK.Types.TaskNotificationMessage do
+  @moduledoc """
+  Emitted when a subtask completes, fails, or is stopped.
+
+  ## Fields
+
+  - `task_id` — Unique identifier for the task.
+  - `status` — Final status: `"completed"`, `"failed"`, or `"stopped"`.
+  - `output_file` — Path to the task's output file, if any.
+  - `summary` — Human-readable summary of the task result.
+  - `usage` — Token usage breakdown map.
+  """
+
+  @type t :: %__MODULE__{
+          type: :task_notification,
+          task_id: String.t() | nil,
+          status: String.t() | nil,
+          output_file: String.t() | nil,
+          summary: String.t() | nil,
+          usage: map()
+        }
+
+  defstruct type: :task_notification,
+            task_id: nil,
+            status: nil,
+            output_file: nil,
+            summary: nil,
+            usage: %{}
 end

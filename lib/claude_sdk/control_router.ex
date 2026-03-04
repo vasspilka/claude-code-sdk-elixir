@@ -7,6 +7,8 @@ defmodule ClaudeSDK.ControlRouter do
   which returns a response to send back to the CLI via stdin.
   """
 
+  require Logger
+
   @type handler :: (map() -> {:allow, map()} | {:deny, String.t()} | {:result, map()})
   @type handler_registry :: %{String.t() => handler()}
 
@@ -39,9 +41,25 @@ defmodule ClaudeSDK.ControlRouter do
         {:unhandled, raw}
 
       handler when is_function(handler, 1) ->
-        result = handler.(request)
-        response = build_response(request_id, subtype, result)
-        {:handled, response}
+        try do
+          case handler.(request) do
+            {tag, _} = result when tag in [:allow, :deny, :result] ->
+              response = build_response(request_id, subtype, result)
+              {:handled, response}
+
+            other ->
+              Logger.warning(
+                "Handler for #{subtype} returned unexpected value: #{inspect(other)}"
+              )
+
+              {:handled, build_deny_response(request_id, "Invalid handler response")}
+          end
+        rescue
+          e ->
+            Logger.warning("Handler for #{subtype} raised: #{Exception.message(e)}")
+
+            {:handled, build_error_response(request_id, Exception.message(e))}
+        end
     end
   end
 
@@ -92,6 +110,7 @@ defmodule ClaudeSDK.ControlRouter do
       case callback.(tool_name, input) do
         :allow -> {:allow, %{}}
         {:allow, permissions} when is_map(permissions) -> {:allow, permissions}
+        :deny -> {:deny, "Permission denied"}
         {:deny, reason} when is_binary(reason) -> {:deny, reason}
         {:deny, reason} -> {:deny, to_string(reason)}
       end
@@ -115,4 +134,20 @@ defmodule ClaudeSDK.ControlRouter do
   end
 
   defp maybe_add_mcp_handler(handlers, _opts), do: handlers
+
+  defp build_error_response(request_id, message) do
+    %{
+      type: "control_response",
+      request_id: request_id,
+      response: %{allowed: false, reason: "Handler error: #{message}"}
+    }
+  end
+
+  defp build_deny_response(request_id, reason) do
+    %{
+      type: "control_response",
+      request_id: request_id,
+      response: %{allowed: false, reason: reason}
+    }
+  end
 end

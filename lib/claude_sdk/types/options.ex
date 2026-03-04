@@ -84,6 +84,31 @@ defmodule ClaudeSDK.Types.Options do
   - `enable_file_checkpointing` — If `true`, the CLI checkpoints file state
     at each user message, enabling `ClaudeSDK.Client.rewind_files/2`.
 
+  ### Thinking
+
+  - `thinking` — Thinking mode configuration map. Keys: `"type"` (`"adaptive"`, `"enabled"`,
+    or `"disabled"`) and optionally `"budget_tokens"` (integer).
+
+  ### Output Format
+
+  - `output_format` — JSON Schema map for structured output format. Maps to `--output-format` JSON.
+
+  ### Sandbox
+
+  - `sandbox` — Sandbox configuration map. Maps to `--sandbox` JSON.
+
+  ### Plugins
+
+  - `plugins` — List of plugin configuration maps.
+
+  ### Betas
+
+  - `betas` — List of beta feature flag strings. Each maps to a repeated `--beta` flag.
+
+  ### User
+
+  - `user` — User identifier string. Maps to `--user`.
+
   ### Miscellaneous
 
   - `cli_path` — Override the CLI binary path (auto-discovered by default).
@@ -95,6 +120,17 @@ defmodule ClaudeSDK.Types.Options do
   - `agents` — Agent configuration map (sent via initialize, not as CLI args).
   - `env` — Extra environment variables as a map of string key-value pairs.
   - `extra_args` — Escape hatch: additional raw CLI argument strings.
+
+  ### Timeouts
+
+  - `init_timeout_ms` — Timeout in ms for the initialization handshake (default: 30_000).
+  - `message_timeout_ms` — Timeout in ms for receiving messages during streaming (default: 120_000).
+
+  ### Stderr
+
+  - `stderr` — Callback invoked with stderr output from the CLI. Note: Erlang ports do not
+    natively separate stderr. To capture stderr, use the CLI's `--log-file` option to redirect
+    logs to a file, or provide a shell wrapper that separates streams.
   """
 
   @type permission_mode :: :default | :accept_edits | :plan | :bypass_permissions
@@ -147,12 +183,28 @@ defmodule ClaudeSDK.Types.Options do
           # Effort level
           effort: String.t() | nil,
 
+          # Thinking mode
+          thinking: map() | nil,
+
           # Structured output
           json_schema: map() | nil,
+          output_format: map() | nil,
 
           # Settings
           settings: map() | nil,
           setting_sources: [String.t()] | nil,
+
+          # Sandbox
+          sandbox: map() | nil,
+
+          # Plugins
+          plugins: [map()] | nil,
+
+          # Beta feature flags
+          betas: [String.t()] | nil,
+
+          # User identifier
+          user: String.t() | nil,
 
           # MCP configuration
           mcp_config: map() | String.t() | nil,
@@ -174,6 +226,13 @@ defmodule ClaudeSDK.Types.Options do
 
           # File checkpointing
           enable_file_checkpointing: boolean(),
+
+          # Timeouts
+          init_timeout_ms: pos_integer(),
+          message_timeout_ms: pos_integer(),
+
+          # Stderr callback
+          stderr: (String.t() -> any()) | nil,
 
           # Extra CLI args (escape hatch)
           extra_args: [String.t()]
@@ -200,9 +259,15 @@ defmodule ClaudeSDK.Types.Options do
             add_dirs: [],
             include_partial_messages: false,
             effort: nil,
+            thinking: nil,
             json_schema: nil,
+            output_format: nil,
             settings: nil,
             setting_sources: nil,
+            sandbox: nil,
+            plugins: nil,
+            betas: nil,
+            user: nil,
             mcp_config: nil,
             mcp_servers: [],
             plugin_dirs: [],
@@ -210,5 +275,54 @@ defmodule ClaudeSDK.Types.Options do
             agents: %{},
             env: %{},
             enable_file_checkpointing: false,
+            init_timeout_ms: 30_000,
+            message_timeout_ms: 120_000,
+            stderr: nil,
             extra_args: []
+
+  @valid_permission_modes [nil, :default, :accept_edits, :plan, :bypass_permissions]
+  @valid_efforts [nil, "low", "medium", "high", "max"]
+
+  @doc """
+  Validate an Options struct, returning `:ok` or `{:error, reason}`.
+
+  Checks:
+  - `max_turns` must be a positive integer or nil
+  - `max_budget_usd` must be a positive number or nil
+  - `permission_mode` must be one of: nil, :default, :accept_edits, :plan, :bypass_permissions
+  - `effort` must be one of: nil, "low", "medium", "high", "max"
+  """
+  @spec validate(t()) :: :ok | {:error, String.t()}
+  def validate(%__MODULE__{} = opts) do
+    with :ok <- validate_max_turns(opts.max_turns),
+         :ok <- validate_max_budget_usd(opts.max_budget_usd),
+         :ok <- validate_permission_mode(opts.permission_mode),
+         :ok <- validate_effort(opts.effort) do
+      :ok
+    end
+  end
+
+  defp validate_max_turns(nil), do: :ok
+  defp validate_max_turns(n) when is_integer(n) and n > 0, do: :ok
+
+  defp validate_max_turns(n),
+    do: {:error, "max_turns must be a positive integer, got: #{inspect(n)}"}
+
+  defp validate_max_budget_usd(nil), do: :ok
+  defp validate_max_budget_usd(n) when is_number(n) and n > 0, do: :ok
+
+  defp validate_max_budget_usd(n),
+    do: {:error, "max_budget_usd must be a positive number, got: #{inspect(n)}"}
+
+  defp validate_permission_mode(mode) when mode in @valid_permission_modes, do: :ok
+
+  defp validate_permission_mode(mode),
+    do:
+      {:error,
+       "permission_mode must be one of #{inspect(@valid_permission_modes)}, got: #{inspect(mode)}"}
+
+  defp validate_effort(effort) when effort in @valid_efforts, do: :ok
+
+  defp validate_effort(effort),
+    do: {:error, "effort must be one of #{inspect(@valid_efforts)}, got: #{inspect(effort)}"}
 end

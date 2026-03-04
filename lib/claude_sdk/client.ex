@@ -31,7 +31,8 @@ defmodule ClaudeSDK.Client do
 
   require Logger
 
-  @init_timeout 30_000
+  @default_init_timeout 30_000
+  @default_message_timeout 120_000
 
   defstruct [
     :options,
@@ -63,7 +64,7 @@ defmodule ClaudeSDK.Client do
   """
   @spec connect(GenServer.server()) :: :ok | {:error, term()}
   def connect(client) do
-    GenServer.call(client, :connect, @init_timeout + 5_000)
+    GenServer.call(client, :connect, @default_init_timeout + 5_000)
   end
 
   @doc """
@@ -89,7 +90,69 @@ defmodule ClaudeSDK.Client do
   """
   @spec rewind_files(GenServer.server(), String.t()) :: :ok | {:error, term()}
   def rewind_files(client, user_message_id) when is_binary(user_message_id) do
-    GenServer.call(client, {:rewind_files, user_message_id}, @init_timeout)
+    GenServer.call(client, {:rewind_files, user_message_id}, @default_init_timeout)
+  end
+
+  @doc """
+  Interrupt the current streaming operation.
+
+  Sends an interrupt signal to cancel the active query. The stream will
+  receive a completion signal and the client returns to `:connected` state.
+  """
+  @spec interrupt(GenServer.server()) :: :ok | {:error, term()}
+  def interrupt(client) do
+    GenServer.call(client, :interrupt)
+  end
+
+  @doc """
+  Change the model mid-session.
+
+  Can only be called when the client is in `:connected` state (not streaming).
+  """
+  @spec set_model(GenServer.server(), String.t()) :: :ok | {:error, term()}
+  def set_model(client, model) when is_binary(model) do
+    GenServer.call(client, {:set_model, model})
+  end
+
+  @doc """
+  Change the permission mode mid-session.
+
+  Can only be called when the client is in `:connected` state (not streaming).
+  """
+  @spec set_permission_mode(GenServer.server(), atom()) :: :ok | {:error, term()}
+  def set_permission_mode(client, mode) when is_atom(mode) do
+    GenServer.call(client, {:set_permission_mode, mode})
+  end
+
+  @doc """
+  Get MCP server connection status.
+
+  Returns a status map from the CLI. Can only be called when connected.
+  """
+  @spec get_mcp_status(GenServer.server()) :: {:ok, map()} | {:error, term()}
+  def get_mcp_status(client) do
+    GenServer.call(client, :get_mcp_status, @default_init_timeout)
+  end
+
+  @doc """
+  Reconnect a failed MCP server by name.
+
+  Can only be called when the client is in `:connected` state.
+  """
+  @spec reconnect_mcp_server(GenServer.server(), String.t()) :: :ok | {:error, term()}
+  def reconnect_mcp_server(client, server_name) when is_binary(server_name) do
+    GenServer.call(client, {:reconnect_mcp_server, server_name}, @default_init_timeout)
+  end
+
+  @doc """
+  Enable or disable an MCP server by name.
+
+  Can only be called when the client is in `:connected` state.
+  """
+  @spec toggle_mcp_server(GenServer.server(), String.t(), boolean()) :: :ok | {:error, term()}
+  def toggle_mcp_server(client, server_name, enabled)
+      when is_binary(server_name) and is_boolean(enabled) do
+    GenServer.call(client, {:toggle_mcp_server, server_name, enabled}, @default_init_timeout)
   end
 
   @doc """
@@ -143,7 +206,8 @@ defmodule ClaudeSDK.Client do
 
     Subprocess.send_message(state.subprocess, user_message)
 
-    {:reply, :ok, %{state | state: :streaming, active_caller: caller}}
+    message_timeout = state.options.message_timeout_ms || @default_message_timeout
+    {:reply, {:ok, message_timeout}, %{state | state: :streaming, active_caller: caller}}
   end
 
   def handle_call({:start_query, _prompt, _caller}, _from, %{state: s} = state) do
@@ -175,6 +239,105 @@ defmodule ClaudeSDK.Client do
     {:reply, {:error, {:invalid_state, s}}, state}
   end
 
+  def handle_call(:interrupt, _from, %{state: :streaming} = state) do
+    interrupt_msg = %{type: "interrupt"}
+    Subprocess.send_message(state.subprocess, interrupt_msg)
+
+    if state.active_caller && is_pid(state.active_caller) do
+      send(state.active_caller, {:client_exit, :interrupted})
+    end
+
+    {:reply, :ok, %{state | state: :connected, active_caller: nil}}
+  end
+
+  def handle_call(:interrupt, _from, state) do
+    {:reply, {:error, {:invalid_state, state.state}}, state}
+  end
+
+  def handle_call({:set_model, model}, _from, %{state: :connected} = state) do
+    control_msg = %{
+      type: "control_request",
+      request_id: ClaudeSDK.generate_request_id(),
+      request: %{subtype: "set_model", model: model}
+    }
+
+    Subprocess.send_message(state.subprocess, control_msg)
+    {:reply, :ok, state}
+  end
+
+  def handle_call({:set_model, _model}, _from, %{state: s} = state) do
+    {:reply, {:error, {:invalid_state, s}}, state}
+  end
+
+  def handle_call({:set_permission_mode, mode}, _from, %{state: :connected} = state) do
+    control_msg = %{
+      type: "control_request",
+      request_id: ClaudeSDK.generate_request_id(),
+      request: %{subtype: "set_permission_mode", mode: to_string(mode)}
+    }
+
+    Subprocess.send_message(state.subprocess, control_msg)
+    {:reply, :ok, state}
+  end
+
+  def handle_call({:set_permission_mode, _mode}, _from, %{state: s} = state) do
+    {:reply, {:error, {:invalid_state, s}}, state}
+  end
+
+  def handle_call(:get_mcp_status, from, %{state: :connected} = state) do
+    request_id = ClaudeSDK.generate_request_id()
+
+    control_msg = %{
+      type: "control_request",
+      request_id: request_id,
+      request: %{subtype: "get_mcp_status"}
+    }
+
+    Subprocess.send_message(state.subprocess, control_msg)
+
+    {:noreply, %{state | state: :awaiting_control_response, active_caller: from}}
+  end
+
+  def handle_call(:get_mcp_status, _from, %{state: s} = state) do
+    {:reply, {:error, {:invalid_state, s}}, state}
+  end
+
+  def handle_call({:reconnect_mcp_server, server_name}, from, %{state: :connected} = state) do
+    request_id = ClaudeSDK.generate_request_id()
+
+    control_msg = %{
+      type: "control_request",
+      request_id: request_id,
+      request: %{subtype: "reconnect_mcp_server", server_name: server_name}
+    }
+
+    Subprocess.send_message(state.subprocess, control_msg)
+
+    {:noreply, %{state | state: :awaiting_control_response, active_caller: from}}
+  end
+
+  def handle_call({:reconnect_mcp_server, _}, _from, %{state: s} = state) do
+    {:reply, {:error, {:invalid_state, s}}, state}
+  end
+
+  def handle_call({:toggle_mcp_server, server_name, enabled}, from, %{state: :connected} = state) do
+    request_id = ClaudeSDK.generate_request_id()
+
+    control_msg = %{
+      type: "control_request",
+      request_id: request_id,
+      request: %{subtype: "toggle_mcp_server", server_name: server_name, enabled: enabled}
+    }
+
+    Subprocess.send_message(state.subprocess, control_msg)
+
+    {:noreply, %{state | state: :awaiting_control_response, active_caller: from}}
+  end
+
+  def handle_call({:toggle_mcp_server, _, _}, _from, %{state: s} = state) do
+    {:reply, {:error, {:invalid_state, s}}, state}
+  end
+
   @impl true
   def handle_info({:claude_message, %{"type" => "control_request"} = raw}, state) do
     case ControlRouter.dispatch(raw, state.control_handlers) do
@@ -193,6 +356,15 @@ defmodule ClaudeSDK.Client do
         %{state: :awaiting_rewind} = state
       ) do
     GenServer.reply(state.active_caller, parse_rewind_response(raw))
+    {:noreply, %{state | state: :connected, active_caller: nil}}
+  end
+
+  def handle_info(
+        {:claude_message, %{"type" => "control_response"} = raw},
+        %{state: :awaiting_control_response} = state
+      ) do
+    response = raw["response"] || %{}
+    GenServer.reply(state.active_caller, {:ok, response})
     {:noreply, %{state | state: :connected, active_caller: nil}}
   end
 
@@ -277,7 +449,9 @@ defmodule ClaudeSDK.Client do
 
         Subprocess.send_message(pid, init_request)
 
-        case wait_for_init() do
+        init_timeout = opts.init_timeout_ms || @default_init_timeout
+
+        case wait_for_init(init_timeout) do
           :ok ->
             {:ok,
              %{state | state: :connected, subprocess: pid, control_handlers: control_handlers}}
@@ -292,7 +466,7 @@ defmodule ClaudeSDK.Client do
     end
   end
 
-  defp wait_for_init do
+  defp wait_for_init(timeout) do
     receive do
       {:claude_message, %{"type" => "control_response"}} ->
         :ok
@@ -301,23 +475,23 @@ defmodule ClaudeSDK.Client do
         receive do
           {:claude_message, %{"type" => "control_response"}} -> :ok
         after
-          @init_timeout -> {:error, :init_timeout}
+          timeout -> {:error, :init_timeout}
         end
     after
-      @init_timeout -> {:error, :init_timeout}
+      timeout -> {:error, :init_timeout}
     end
   end
 
   defp start_query(client, prompt) do
     case GenServer.call(client, {:start_query, prompt, self()}) do
-      :ok -> :streaming
+      {:ok, message_timeout} -> {:streaming, message_timeout}
       {:error, reason} -> raise "Failed to start query: #{inspect(reason)}"
     end
   end
 
   defp receive_client_messages(:halt, _client), do: {:halt, :done}
 
-  defp receive_client_messages(:streaming, _client) do
+  defp receive_client_messages({:streaming, message_timeout}, _client) do
     receive do
       {:client_message, raw} ->
         case ClaudeSDK.MessageParser.parse(raw) do
@@ -325,16 +499,16 @@ defmodule ClaudeSDK.Client do
             {[msg], :halt}
 
           {:ok, msg} ->
-            {[msg], :streaming}
+            {[msg], {:streaming, message_timeout}}
 
           {:error, _} ->
-            {[], :streaming}
+            {[], {:streaming, message_timeout}}
         end
 
       {:client_exit, _reason} ->
         {:halt, :done}
     after
-      120_000 ->
+      message_timeout ->
         {:halt, :timeout}
     end
   end

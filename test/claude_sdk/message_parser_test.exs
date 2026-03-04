@@ -163,6 +163,87 @@ defmodule ClaudeSDK.MessageParserTest do
     end
   end
 
+  describe "parse/1 — task messages" do
+    test "parses TaskStartedMessage" do
+      raw = Fixtures.task_started_json()
+
+      assert {:ok, %ClaudeSDK.Types.TaskStartedMessage{} = msg} = MessageParser.parse(raw)
+
+      assert msg.type == :task_started
+      assert msg.task_id == "task-001"
+      assert msg.description == "Analyzing code structure"
+      assert msg.uuid == "msg-task-001"
+      assert msg.session_id == "test-session"
+      assert msg.tool_use_id == "toolu_task_01"
+      assert msg.task_type == "agent"
+    end
+
+    test "parses TaskProgressMessage" do
+      raw = Fixtures.task_progress_json()
+
+      assert {:ok, %ClaudeSDK.Types.TaskProgressMessage{} = msg} = MessageParser.parse(raw)
+
+      assert msg.type == :task_progress
+      assert msg.task_id == "task-001"
+      assert msg.description == "Reading files"
+      assert msg.usage == %{"total_tokens" => 5000, "tool_uses" => 3, "duration_ms" => 2500}
+      assert msg.uuid == "msg-task-002"
+      assert msg.session_id == "test-session"
+      assert msg.last_tool_name == "Read"
+    end
+
+    test "parses TaskNotificationMessage" do
+      raw = Fixtures.task_notification_json()
+
+      assert {:ok, %ClaudeSDK.Types.TaskNotificationMessage{} = msg} = MessageParser.parse(raw)
+
+      assert msg.type == :task_notification
+      assert msg.task_id == "task-001"
+      assert msg.status == "completed"
+      assert msg.output_file == "/tmp/task-output.json"
+      assert msg.summary == "Successfully analyzed 5 files"
+      assert msg.usage == %{"total_tokens" => 15000, "tool_uses" => 8, "duration_ms" => 10000}
+    end
+
+    test "parses TaskStartedMessage with minimal fields" do
+      raw = %{"type" => "task_started", "task_id" => "t1"}
+
+      assert {:ok, %ClaudeSDK.Types.TaskStartedMessage{task_id: "t1", description: nil}} =
+               MessageParser.parse(raw)
+    end
+
+    test "parses TaskNotificationMessage with failed status" do
+      raw = %{
+        "type" => "task_notification",
+        "task_id" => "t2",
+        "status" => "failed",
+        "summary" => "Task encountered an error"
+      }
+
+      assert {:ok, %ClaudeSDK.Types.TaskNotificationMessage{status: "failed"}} =
+               MessageParser.parse(raw)
+    end
+  end
+
+  describe "parse/1 — ResultMessage with structured_output" do
+    test "parses structured_output field when present" do
+      raw = Fixtures.result_with_structured_output_json()
+
+      assert {:ok, %ResultMessage{} = msg} = MessageParser.parse(raw)
+
+      assert msg.structured_output == %{"answer" => "42"}
+      assert msg.result == ~s({"answer": "42"})
+    end
+
+    test "structured_output is nil when not present" do
+      raw = Fixtures.result_message_json()
+
+      assert {:ok, %ResultMessage{} = msg} = MessageParser.parse(raw)
+
+      assert msg.structured_output == nil
+    end
+  end
+
   describe "content block parsing" do
     test "parses tool_result blocks" do
       raw = %{

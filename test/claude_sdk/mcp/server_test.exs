@@ -84,7 +84,7 @@ defmodule ClaudeSDK.MCP.ServerTest do
 
       assert Map.has_key?(index, {"my-server", "greet"})
       assert Map.has_key?(index, {"my-server", "add"})
-      assert is_function(index[{"my-server", "greet"}], 1)
+      assert %Tool{name: "greet"} = index[{"my-server", "greet"}]
     end
 
     test "handles multiple servers" do
@@ -208,7 +208,7 @@ defmodule ClaudeSDK.MCP.ServerTest do
       assert {:ok, %{"status" => "ok"}} = Jason.decode(content["text"])
     end
 
-    test "handles tools/list method", %{index: index} do
+    test "handles tools/list method and returns registered tools", %{index: index} do
       jsonrpc = %{
         "jsonrpc" => "2.0",
         "id" => 7,
@@ -216,7 +216,28 @@ defmodule ClaudeSDK.MCP.ServerTest do
       }
 
       assert {:result, response} = Server.handle_jsonrpc("test-server", jsonrpc, index)
-      assert response.jsonrpc_response["result"]["tools"] == []
+      tools = response.jsonrpc_response["result"]["tools"]
+      assert length(tools) == 2
+
+      tool_names = Enum.map(tools, & &1["name"]) |> Enum.sort()
+      assert tool_names == ["add", "greet"]
+
+      greet = Enum.find(tools, &(&1["name"] == "greet"))
+      assert greet["description"] == "Say hello"
+      assert greet["inputSchema"]["type"] == "object"
+    end
+
+    test "tools/list returns only tools for the requested server" do
+      s1 = Server.create("server-a", "1.0", [hd(test_tools())])
+      s2 = Server.create("server-b", "1.0", [List.last(test_tools())])
+      index = Server.build_tool_index([s1, s2])
+
+      jsonrpc = %{"jsonrpc" => "2.0", "id" => 10, "method" => "tools/list"}
+
+      assert {:result, response} = Server.handle_jsonrpc("server-a", jsonrpc, index)
+      tools = response.jsonrpc_response["result"]["tools"]
+      assert length(tools) == 1
+      assert hd(tools)["name"] == "greet"
     end
 
     test "handles unsupported methods", %{index: index} do
@@ -228,6 +249,30 @@ defmodule ClaudeSDK.MCP.ServerTest do
 
       assert {:result, response} = Server.handle_jsonrpc("test-server", jsonrpc, index)
       assert response.jsonrpc_response["error"]["code"] == -32601
+    end
+
+    test "truncates results exceeding 1MB" do
+      large_tool = %Tool{
+        name: "large",
+        description: "Returns large data",
+        input_schema: %{},
+        handler: fn _args -> {:ok, String.duplicate("x", 1_100_000)} end
+      }
+
+      server = Server.create("large-server", "1.0", [large_tool])
+      index = Server.build_tool_index([server])
+
+      jsonrpc = %{
+        "jsonrpc" => "2.0",
+        "id" => 9,
+        "method" => "tools/call",
+        "params" => %{"name" => "large", "arguments" => %{}}
+      }
+
+      assert {:result, response} = Server.handle_jsonrpc("large-server", jsonrpc, index)
+      [content] = response.jsonrpc_response["result"]["content"]
+      assert content["text"] =~ "truncated: result exceeded 1MB limit"
+      assert byte_size(content["text"]) < 1_100_000
     end
   end
 end

@@ -117,6 +117,136 @@ defmodule ClaudeSDK.ClientTest do
     end
   end
 
+  describe "dynamic control operations" do
+    test "interrupt returns error when not streaming" do
+      opts = %Options{cli_path: @mock_cli_path}
+      {:ok, client} = Client.start_link(options: opts)
+
+      assert {:error, {:invalid_state, :disconnected}} = Client.interrupt(client)
+
+      :ok = Client.connect(client)
+      assert {:error, {:invalid_state, :connected}} = Client.interrupt(client)
+
+      Client.close(client)
+    end
+
+    test "set_model returns error when not connected" do
+      opts = %Options{cli_path: @mock_cli_path}
+      {:ok, client} = Client.start_link(options: opts)
+
+      assert {:error, {:invalid_state, :disconnected}} =
+               Client.set_model(client, "claude-sonnet-4-20250514")
+
+      Client.close(client)
+    end
+
+    test "set_model succeeds when connected" do
+      opts = %Options{cli_path: @mock_cli_path}
+      {:ok, client} = Client.start_link(options: opts)
+      :ok = Client.connect(client)
+
+      assert :ok = Client.set_model(client, "claude-sonnet-4-20250514")
+
+      Client.close(client)
+    end
+
+    test "set_permission_mode returns error when not connected" do
+      opts = %Options{cli_path: @mock_cli_path}
+      {:ok, client} = Client.start_link(options: opts)
+
+      assert {:error, {:invalid_state, :disconnected}} =
+               Client.set_permission_mode(client, :bypass_permissions)
+
+      Client.close(client)
+    end
+
+    test "set_permission_mode succeeds when connected" do
+      opts = %Options{cli_path: @mock_cli_path}
+      {:ok, client} = Client.start_link(options: opts)
+      :ok = Client.connect(client)
+
+      assert :ok = Client.set_permission_mode(client, :bypass_permissions)
+
+      Client.close(client)
+    end
+
+    test "get_mcp_status returns error when not connected" do
+      opts = %Options{cli_path: @mock_cli_path}
+      {:ok, client} = Client.start_link(options: opts)
+
+      assert {:error, {:invalid_state, :disconnected}} = Client.get_mcp_status(client)
+
+      Client.close(client)
+    end
+
+    test "reconnect_mcp_server returns error when not connected" do
+      opts = %Options{cli_path: @mock_cli_path}
+      {:ok, client} = Client.start_link(options: opts)
+
+      assert {:error, {:invalid_state, :disconnected}} =
+               Client.reconnect_mcp_server(client, "my-server")
+
+      Client.close(client)
+    end
+
+    test "toggle_mcp_server returns error when not connected" do
+      opts = %Options{cli_path: @mock_cli_path}
+      {:ok, client} = Client.start_link(options: opts)
+
+      assert {:error, {:invalid_state, :disconnected}} =
+               Client.toggle_mcp_server(client, "my-server", false)
+
+      Client.close(client)
+    end
+
+    test "set_model returns error when streaming (via GenServer call)" do
+      # Test the GenServer state machine directly:
+      # When state is :streaming, set_model should return {:error, {:invalid_state, :streaming}}
+      opts = %Options{cli_path: @mock_cli_path}
+      {:ok, client} = Client.start_link(options: opts)
+      :ok = Client.connect(client)
+
+      # Put the client into :streaming state by calling start_query
+      assert {:ok, _timeout} =
+               GenServer.call(client, {:start_query, "test prompt", self()})
+
+      # Now set_model should fail because we're streaming
+      assert {:error, {:invalid_state, :streaming}} =
+               Client.set_model(client, "claude-sonnet-4-20250514")
+
+      # Clean up: drain messages and finish
+      receive do
+        {:client_message, _} -> :ok
+      after
+        1000 -> :ok
+      end
+
+      GenServer.call(client, :finish_query, 5_000)
+      Client.close(client)
+    end
+
+    test "set_permission_mode returns error when streaming (via GenServer call)" do
+      opts = %Options{cli_path: @mock_cli_path}
+      {:ok, client} = Client.start_link(options: opts)
+      :ok = Client.connect(client)
+
+      assert {:ok, _timeout} =
+               GenServer.call(client, {:start_query, "test prompt", self()})
+
+      assert {:error, {:invalid_state, :streaming}} =
+               Client.set_permission_mode(client, :plan)
+
+      receive do
+        {:client_message, _} -> :ok
+      after
+        1000 -> :ok
+      end
+
+      GenServer.call(client, :finish_query, 5_000)
+      Client.close(client)
+    end
+  end
+
   describe "with permission callback" do
     @mock_cli_permission_path Path.expand("../support/mock_cli_permission.sh", __DIR__)
 

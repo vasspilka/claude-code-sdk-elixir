@@ -164,6 +164,57 @@ defmodule ClaudeSDK.Test.Fixtures do
     }
   end
 
+  def task_started_json do
+    %{
+      "type" => "task_started",
+      "task_id" => "task-001",
+      "description" => "Analyzing code structure",
+      "uuid" => "msg-task-001",
+      "session_id" => "test-session",
+      "tool_use_id" => "toolu_task_01",
+      "task_type" => "agent"
+    }
+  end
+
+  def task_progress_json do
+    %{
+      "type" => "task_progress",
+      "task_id" => "task-001",
+      "description" => "Reading files",
+      "usage" => %{"total_tokens" => 5000, "tool_uses" => 3, "duration_ms" => 2500},
+      "uuid" => "msg-task-002",
+      "session_id" => "test-session",
+      "last_tool_name" => "Read"
+    }
+  end
+
+  def task_notification_json do
+    %{
+      "type" => "task_notification",
+      "task_id" => "task-001",
+      "status" => "completed",
+      "output_file" => "/tmp/task-output.json",
+      "summary" => "Successfully analyzed 5 files",
+      "usage" => %{"total_tokens" => 15000, "tool_uses" => 8, "duration_ms" => 10000}
+    }
+  end
+
+  def result_with_structured_output_json do
+    %{
+      "type" => "result",
+      "subtype" => "success",
+      "duration_ms" => 2000,
+      "duration_api_ms" => 1800,
+      "is_error" => false,
+      "num_turns" => 1,
+      "session_id" => "test-session",
+      "total_cost_usd" => 0.005,
+      "usage" => %{"input_tokens" => 200, "output_tokens" => 100},
+      "result" => ~s({"answer": "42"}),
+      "structured_output" => %{"answer" => "42"}
+    }
+  end
+
   @doc "Encode a fixture as a JSON line (with trailing newline)."
   def to_json_line(fixture) do
     Jason.encode!(fixture) <> "\n"

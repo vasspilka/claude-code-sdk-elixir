@@ -225,6 +225,68 @@ defmodule ClaudeSDK.Transport.CommandBuilderTest do
       assert config["mcpServers"]["test-server"]["type"] == "sdk"
     end
 
+    test "adds --fallback-model when set" do
+      args = CommandBuilder.build_args(%Options{fallback_model: "claude-haiku-4-5-20251001"})
+      assert_flag(args, "--fallback-model", "claude-haiku-4-5-20251001")
+    end
+
+    test "adds --thinking as encoded JSON" do
+      thinking = %{"type" => "adaptive", "budget_tokens" => 5000}
+      args = CommandBuilder.build_args(%Options{thinking: thinking})
+
+      idx = Enum.find_index(args, &(&1 == "--thinking"))
+      assert idx != nil
+      assert {:ok, ^thinking} = Jason.decode(Enum.at(args, idx + 1))
+    end
+
+    test "adds --output-format as encoded JSON when output_format is set" do
+      output_format = %{"type" => "json", "schema" => %{"key" => "value"}}
+      args = CommandBuilder.build_args(%Options{output_format: output_format})
+
+      # Find the second --output-format (first is from base_args with "stream-json")
+      indices =
+        args
+        |> Enum.with_index()
+        |> Enum.filter(fn {val, _} -> val == "--output-format" end)
+        |> Enum.map(fn {_, idx} -> idx end)
+
+      # There should be at least 2: base "stream-json" and the JSON one
+      assert length(indices) >= 2
+      last_idx = List.last(indices)
+      assert {:ok, ^output_format} = Jason.decode(Enum.at(args, last_idx + 1))
+    end
+
+    test "adds --sandbox as encoded JSON" do
+      sandbox = %{"enabled" => true, "permissions" => ["read"]}
+      args = CommandBuilder.build_args(%Options{sandbox: sandbox})
+
+      idx = Enum.find_index(args, &(&1 == "--sandbox"))
+      assert idx != nil
+      assert {:ok, ^sandbox} = Jason.decode(Enum.at(args, idx + 1))
+    end
+
+    test "adds repeated --beta flags" do
+      args = CommandBuilder.build_args(%Options{betas: ["feature-a", "feature-b"]})
+
+      pairs = chunk_flags(args, "--beta")
+      assert ["feature-a", "feature-b"] = pairs
+    end
+
+    test "omits --beta when betas is nil" do
+      args = CommandBuilder.build_args(%Options{betas: nil})
+      refute "--beta" in args
+    end
+
+    test "adds --user when set" do
+      args = CommandBuilder.build_args(%Options{user: "test-user-123"})
+      assert_flag(args, "--user", "test-user-123")
+    end
+
+    test "omits --user when nil" do
+      args = CommandBuilder.build_args(%Options{user: nil})
+      refute "--user" in args
+    end
+
     test "omits --mcp-config when mcp_servers is empty" do
       args = CommandBuilder.build_args(%Options{mcp_servers: []})
       # Only the static mcp_config nil path — no --mcp-config from servers

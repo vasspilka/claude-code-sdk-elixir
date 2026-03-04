@@ -56,16 +56,17 @@ defmodule ClaudeSDK.MCP.Server do
   end
 
   @doc """
-  Build a tool handler lookup index from server configs.
+  Build a tool lookup index from server configs.
 
-  Returns a map of `{server_name, tool_name} => handler` for fast dispatch.
+  Returns a map of `{server_name, tool_name} => Tool.t()` for fast dispatch
+  and tool listing.
   """
-  @spec build_tool_index([map()]) :: %{{String.t(), String.t()} => Tool.handler()}
+  @spec build_tool_index([map()]) :: %{{String.t(), String.t()} => Tool.t()}
   def build_tool_index(servers) when is_list(servers) do
     for server <- servers,
         tool <- server.tools,
         into: %{} do
-      {{server.name, tool.name}, tool.handler}
+      {{server.name, tool.name}, tool}
     end
   end
 
@@ -98,7 +99,7 @@ defmodule ClaudeSDK.MCP.Server do
            }
          }}
 
-      handler when is_function(handler, 1) ->
+      %Tool{handler: handler} ->
         case handler.(arguments) do
           {:ok, result} ->
             content = format_result(result)
@@ -131,13 +132,24 @@ defmodule ClaudeSDK.MCP.Server do
     end
   end
 
-  def handle_jsonrpc(_server_name, %{"method" => "tools/list", "id" => id}, _tool_index) do
+  def handle_jsonrpc(server_name, %{"method" => "tools/list", "id" => id}, tool_index) do
+    tools =
+      tool_index
+      |> Enum.filter(fn {{sn, _}, _} -> sn == server_name end)
+      |> Enum.map(fn {{_, _}, tool} ->
+        %{
+          "name" => tool.name,
+          "description" => tool.description,
+          "inputSchema" => tool.input_schema
+        }
+      end)
+
     {:result,
      %{
        jsonrpc_response: %{
          "jsonrpc" => "2.0",
          "id" => id,
-         "result" => %{"tools" => []}
+         "result" => %{"tools" => tools}
        }
      }}
   end
@@ -156,17 +168,29 @@ defmodule ClaudeSDK.MCP.Server do
      }}
   end
 
+  # 1 MB size limit for MCP results
+  @max_result_bytes 1_048_576
+
   defp format_result(result) when is_binary(result) do
-    [%{"type" => "text", "text" => result}]
+    [%{"type" => "text", "text" => maybe_truncate(result)}]
   end
 
   defp format_result(result) when is_list(result), do: result
 
   defp format_result(result) when is_map(result) do
-    [%{"type" => "text", "text" => Jason.encode!(result)}]
+    text = Jason.encode!(result)
+    [%{"type" => "text", "text" => maybe_truncate(text)}]
   end
 
   defp format_result(result) do
-    [%{"type" => "text", "text" => inspect(result)}]
+    text = inspect(result)
+    [%{"type" => "text", "text" => maybe_truncate(text)}]
   end
+
+  defp maybe_truncate(text) when byte_size(text) > @max_result_bytes do
+    truncated = binary_part(text, 0, @max_result_bytes)
+    truncated <> "\n... [truncated: result exceeded 1MB limit]"
+  end
+
+  defp maybe_truncate(text), do: text
 end

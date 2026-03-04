@@ -189,6 +189,25 @@ defmodule ClaudeSDK.ControlRouterTest do
       assert response.response.reason == "Dangerous command"
     end
 
+    test "callback returning bare :deny produces deny response" do
+      callback = fn _tool, _input -> :deny end
+      handlers = ControlRouter.build_handlers(%{can_use_tool: callback, mcp_tool_index: %{}})
+
+      raw = %{
+        "type" => "control_request",
+        "request_id" => "req_bare_deny",
+        "request" => %{
+          "subtype" => "can_use_tool",
+          "tool_name" => "Bash",
+          "input" => %{}
+        }
+      }
+
+      {:handled, response} = ControlRouter.dispatch(raw, handlers)
+      assert response.response.allowed == false
+      assert response.response.reason == "Permission denied"
+    end
+
     test "callback returning {:allow, permissions} merges permissions" do
       callback = fn _tool, _input -> {:allow, %{temporary: true}} end
       handlers = ControlRouter.build_handlers(%{can_use_tool: callback, mcp_tool_index: %{}})
@@ -206,6 +225,55 @@ defmodule ClaudeSDK.ControlRouterTest do
       {:handled, response} = ControlRouter.dispatch(raw, handlers)
       assert response.response.allowed == true
       assert response.response.temporary == true
+    end
+  end
+
+  describe "handler crash safety" do
+    test "handler raising an exception returns error response instead of crashing" do
+      handler = fn _request -> raise "boom" end
+      handlers = %{"can_use_tool" => handler}
+
+      raw = %{
+        "type" => "control_request",
+        "request_id" => "req_crash",
+        "request" => %{"subtype" => "can_use_tool", "tool_name" => "Bash"}
+      }
+
+      assert {:handled, response} = ControlRouter.dispatch(raw, handlers)
+      assert response.type == "control_response"
+      assert response.request_id == "req_crash"
+      assert response.response.allowed == false
+      assert response.response.reason =~ "Handler error: boom"
+    end
+
+    test "handler returning unexpected value returns deny response" do
+      handler = fn _request -> :unexpected_value end
+      handlers = %{"can_use_tool" => handler}
+
+      raw = %{
+        "type" => "control_request",
+        "request_id" => "req_bad",
+        "request" => %{"subtype" => "can_use_tool", "tool_name" => "Bash"}
+      }
+
+      assert {:handled, response} = ControlRouter.dispatch(raw, handlers)
+      assert response.response.allowed == false
+      assert response.response.reason == "Invalid handler response"
+    end
+
+    test "handler raising ArgumentError is caught and reported" do
+      handler = fn _request -> raise ArgumentError, "bad arg" end
+      handlers = %{"test_handler" => handler}
+
+      raw = %{
+        "type" => "control_request",
+        "request_id" => "req_argerr",
+        "request" => %{"subtype" => "test_handler"}
+      }
+
+      assert {:handled, response} = ControlRouter.dispatch(raw, handlers)
+      assert response.response.allowed == false
+      assert response.response.reason =~ "Handler error:"
     end
   end
 end

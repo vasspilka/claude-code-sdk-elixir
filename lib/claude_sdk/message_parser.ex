@@ -13,6 +13,9 @@ defmodule ClaudeSDK.MessageParser do
     ResultMessage,
     StreamEvent,
     SystemMessage,
+    TaskNotificationMessage,
+    TaskProgressMessage,
+    TaskStartedMessage,
     TextBlock,
     ThinkingBlock,
     ToolResultBlock,
@@ -28,6 +31,9 @@ defmodule ClaudeSDK.MessageParser do
           | StreamEvent.t()
           | ControlRequest.t()
           | ControlResponse.t()
+          | TaskStartedMessage.t()
+          | TaskProgressMessage.t()
+          | TaskNotificationMessage.t()
 
   @doc """
   Parse a raw JSON map into a typed message struct.
@@ -42,6 +48,9 @@ defmodule ClaudeSDK.MessageParser do
   def parse(%{"type" => "stream_event"} = raw), do: {:ok, parse_stream_event(raw)}
   def parse(%{"type" => "control_request"} = raw), do: {:ok, parse_control_request(raw)}
   def parse(%{"type" => "control_response"} = raw), do: {:ok, parse_control_response(raw)}
+  def parse(%{"type" => "task_started"} = raw), do: {:ok, parse_task_started(raw)}
+  def parse(%{"type" => "task_progress"} = raw), do: {:ok, parse_task_progress(raw)}
+  def parse(%{"type" => "task_notification"} = raw), do: {:ok, parse_task_notification(raw)}
   def parse(%{"type" => type}), do: {:error, {:unknown_type, type}}
   def parse(_), do: {:error, :missing_type}
 
@@ -104,7 +113,8 @@ defmodule ClaudeSDK.MessageParser do
       session_id: raw["session_id"],
       total_cost_usd: raw["total_cost_usd"],
       usage: raw["usage"] || %{},
-      result: raw["result"]
+      result: raw["result"],
+      structured_output: raw["structured_output"]
     }
   end
 
@@ -133,6 +143,44 @@ defmodule ClaudeSDK.MessageParser do
   defp parse_control_response(raw) do
     %ControlResponse{
       response: raw["response"] || %{}
+    }
+  end
+
+  # Task started
+
+  defp parse_task_started(raw) do
+    %TaskStartedMessage{
+      task_id: raw["task_id"],
+      description: raw["description"],
+      uuid: raw["uuid"],
+      session_id: raw["session_id"],
+      tool_use_id: raw["tool_use_id"],
+      task_type: raw["task_type"]
+    }
+  end
+
+  # Task progress
+
+  defp parse_task_progress(raw) do
+    %TaskProgressMessage{
+      task_id: raw["task_id"],
+      description: raw["description"],
+      usage: raw["usage"] || %{},
+      uuid: raw["uuid"],
+      session_id: raw["session_id"],
+      last_tool_name: raw["last_tool_name"]
+    }
+  end
+
+  # Task notification
+
+  defp parse_task_notification(raw) do
+    %TaskNotificationMessage{
+      task_id: raw["task_id"],
+      status: raw["status"],
+      output_file: raw["output_file"],
+      summary: raw["summary"],
+      usage: raw["usage"] || %{}
     }
   end
 

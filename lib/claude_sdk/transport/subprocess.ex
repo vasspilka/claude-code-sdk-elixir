@@ -4,6 +4,13 @@ defmodule ClaudeSDK.Transport.Subprocess do
 
   Spawns the CLI, sends JSON messages via stdin, receives JSON responses
   via stdout, parses them, and forwards to the caller process.
+
+  ## Stderr Handling
+
+  Erlang ports with `{:line, N}` only capture stdout. Stderr output from the
+  CLI is not captured. To capture CLI logs, use the `--log-file` option via
+  `Options.extra_args: ["--log-file", "/path/to/log"]`, or provide a shell
+  wrapper that redirects stderr.
   """
 
   use GenServer

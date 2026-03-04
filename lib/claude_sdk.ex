@@ -48,12 +48,15 @@ defmodule ClaudeSDK do
       |> Enum.each(&IO.inspect/1)
   """
 
+  require Logger
+
   alias ClaudeSDK.ControlRouter
   alias ClaudeSDK.MessageParser
   alias ClaudeSDK.Transport.Subprocess
   alias ClaudeSDK.Types.Options
 
-  @init_timeout 30_000
+  @default_init_timeout 30_000
+  @default_message_timeout 120_000
 
   @doc """
   Send a prompt to the Claude CLI and return a stream of typed messages.
@@ -131,6 +134,8 @@ defmodule ClaudeSDK do
 
     Subprocess.send_message(pid, init_request)
 
+    init_timeout = opts.init_timeout_ms || @default_init_timeout
+
     # Wait for control_response acknowledging initialization
     receive do
       {:claude_message, %{"type" => "control_response"}} ->
@@ -141,14 +146,14 @@ defmodule ClaudeSDK do
         receive do
           {:claude_message, %{"type" => "control_response"}} -> :ok
         after
-          @init_timeout ->
+          init_timeout ->
             Subprocess.stop(pid)
-            raise ClaudeSDK.TimeoutError, timeout_ms: @init_timeout
+            raise ClaudeSDK.TimeoutError, timeout_ms: init_timeout
         end
     after
-      @init_timeout ->
+      init_timeout ->
         Subprocess.stop(pid)
-        raise ClaudeSDK.TimeoutError, timeout_ms: @init_timeout
+        raise ClaudeSDK.TimeoutError, timeout_ms: init_timeout
     end
 
     # Send the user prompt
@@ -161,13 +166,16 @@ defmodule ClaudeSDK do
 
     Subprocess.send_message(pid, user_message)
 
-    %{subprocess: pid, control_handlers: control_handlers}
+    message_timeout = opts.message_timeout_ms || @default_message_timeout
+    %{subprocess: pid, control_handlers: control_handlers, message_timeout: message_timeout}
   end
 
   # Stream.resource next_fun: receive and parse messages
   defp receive_messages(:halt), do: {:halt, :done}
 
-  defp receive_messages(%{subprocess: pid, control_handlers: handlers} = state) do
+  defp receive_messages(
+         %{subprocess: pid, control_handlers: handlers, message_timeout: message_timeout} = state
+       ) do
     receive do
       {:claude_message, %{"type" => "control_request"} = raw} ->
         case ControlRouter.dispatch(raw, handlers) do
@@ -177,8 +185,12 @@ defmodule ClaudeSDK do
 
           {:unhandled, _} ->
             case MessageParser.parse(raw) do
-              {:ok, msg} -> {[msg], state}
-              {:error, _} -> {[], state}
+              {:ok, msg} ->
+                {[msg], state}
+
+              {:error, reason} ->
+                Logger.warning("Failed to parse control_request message: #{inspect(reason)}")
+                {[], state}
             end
         end
 
@@ -190,15 +202,28 @@ defmodule ClaudeSDK do
           {:ok, msg} ->
             {[msg], state}
 
-          {:error, _reason} ->
+          {:error, reason} ->
+            Logger.warning("Failed to parse message: #{inspect(reason)}")
             {[], state}
         end
 
       {:claude_exit, _reason} ->
         {:halt, :done}
     after
-      120_000 ->
-        {:halt, :timeout}
+      message_timeout ->
+        timeout_seconds = div(message_timeout, 1000)
+
+        timeout_result = %ClaudeSDK.Types.ResultMessage{
+          subtype: "error",
+          is_error: true,
+          result: "Message receive timeout after #{timeout_seconds}s",
+          duration_ms: 0,
+          duration_api_ms: 0,
+          num_turns: 0,
+          session_id: nil
+        }
+
+        {[timeout_result], :halt}
     end
   end
 
