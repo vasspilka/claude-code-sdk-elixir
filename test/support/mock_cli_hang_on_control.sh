@@ -30,9 +30,9 @@ while read -r user_line; do
     exit 0
   fi
 
-  # Send assistant response + result for user messages
-  echo "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"Response.\"}],\"model\":\"mock-model\"},\"parent_tool_use_id\":null,\"error\":null}"
-  echo "{\"type\":\"result\",\"subtype\":\"success\",\"duration_ms\":100,\"duration_api_ms\":80,\"is_error\":false,\"num_turns\":1,\"session_id\":\"mock-session\",\"total_cost_usd\":0.001,\"usage\":{\"input_tokens\":10,\"output_tokens\":5},\"result\":\"Done.\"}"
+  # Send assistant response + result for user messages (suppress broken pipe errors)
+  echo "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"Response.\"}],\"model\":\"mock-model\"},\"parent_tool_use_id\":null,\"error\":null}" 2>/dev/null
+  echo "{\"type\":\"result\",\"subtype\":\"success\",\"duration_ms\":100,\"duration_api_ms\":80,\"is_error\":false,\"num_turns\":1,\"session_id\":\"mock-session\",\"total_cost_usd\":0.001,\"usage\":{\"input_tokens\":10,\"output_tokens\":5},\"result\":\"Done.\"}" 2>/dev/null
 done
 
 exit 0

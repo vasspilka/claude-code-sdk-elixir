@@ -1,5 +1,5 @@
 defmodule ClaudeSDK.MCPIntegrationTest do
-  use ExUnit.Case
+  use ExUnit.Case, async: true
 
   alias ClaudeSDK.MCP.Tool
   alias ClaudeSDK.Types.Options

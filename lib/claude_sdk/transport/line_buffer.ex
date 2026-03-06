@@ -10,6 +10,11 @@ defmodule ClaudeSDK.Transport.LineBuffer do
   JSON parsing on each.
   """
 
+  require Logger
+
+  # 10 MB — generous limit to catch runaway output without rejecting large tool results
+  @max_buffer_bytes 10_485_760
+
   @type t :: %__MODULE__{buffer: String.t()}
 
   defstruct buffer: ""
@@ -29,8 +34,18 @@ defmodule ClaudeSDK.Transport.LineBuffer do
   @spec append(t(), String.t()) :: {t(), [map()]}
   def append(%__MODULE__{buffer: buf} = _state, data) when is_binary(data) do
     full = buf <> data
-    {remaining, messages} = extract_lines(full)
-    {%__MODULE__{buffer: remaining}, messages}
+
+    if byte_size(full) > @max_buffer_bytes do
+      Logger.warning(
+        "LineBuffer exceeded #{div(@max_buffer_bytes, 1_048_576)}MB limit " <>
+          "(#{byte_size(full)} bytes), discarding buffer"
+      )
+
+      {%__MODULE__{buffer: ""}, []}
+    else
+      {remaining, messages} = extract_lines(full)
+      {%__MODULE__{buffer: remaining}, messages}
+    end
   end
 
   @doc """
@@ -42,10 +57,10 @@ defmodule ClaudeSDK.Transport.LineBuffer do
   def parse_line(line) do
     trimmed = String.trim(line)
 
-    if trimmed == "" do
-      {:error, :empty}
-    else
-      Jason.decode(trimmed)
+    cond do
+      trimmed == "" -> {:error, :empty}
+      byte_size(trimmed) > @max_buffer_bytes -> {:error, :line_too_large}
+      true -> Jason.decode(trimmed)
     end
   end
 

@@ -1,5 +1,5 @@
 defmodule ClaudeSDK.QueryCoverageTest do
-  use ExUnit.Case
+  use ExUnit.Case, async: true
 
   alias ClaudeSDK.Types.{AssistantMessage, Options, ResultMessage}
 
@@ -123,6 +123,19 @@ defmodule ClaudeSDK.QueryCoverageTest do
       messages = ClaudeSDK.query("test", opts) |> Enum.to_list()
       assert length(messages) > 0
     end
+
+    test "cleanup stops subprocess when stream is interrupted early" do
+      # Use the timeout mock that hangs after the first message.
+      # Taking only 1 message interrupts the stream, triggering cleanup
+      # with the subprocess still alive.
+      opts = %Options{cli_path: @mock_cli_timeout, message_timeout_ms: 60_000}
+
+      messages =
+        ClaudeSDK.query("test", opts)
+        |> Enum.take(1)
+
+      assert length(messages) == 1
+    end
   end
 
   describe "normalize_agents" do
@@ -179,6 +192,28 @@ defmodule ClaudeSDK.QueryCoverageTest do
       opts = %Options{
         cli_path: @mock_cli_path,
         mcp_servers: nil
+      }
+
+      messages = ClaudeSDK.query("test", opts) |> Enum.to_list()
+      assert length(messages) > 0
+    end
+  end
+
+  describe "plugins option" do
+    test "query works with plugins as empty list" do
+      opts = %Options{
+        cli_path: @mock_cli_path,
+        plugins: []
+      }
+
+      messages = ClaudeSDK.query("test", opts) |> Enum.to_list()
+      assert length(messages) > 0
+    end
+
+    test "query works with plugins as non-empty list" do
+      opts = %Options{
+        cli_path: @mock_cli_path,
+        plugins: ["my-plugin", "another-plugin"]
       }
 
       messages = ClaudeSDK.query("test", opts) |> Enum.to_list()

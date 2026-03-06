@@ -32,10 +32,9 @@ defmodule ClaudeSDK.Transport.CLIDiscovery do
   def find_cli(explicit_path \\ nil)
 
   def find_cli(path) when is_binary(path) do
-    if File.exists?(path) do
-      {:ok, path}
-    else
-      {:error, :not_found}
+    case File.stat(path) do
+      {:ok, %File.Stat{type: :regular}} -> {:ok, path}
+      _ -> {:error, :not_found}
     end
   end
 
@@ -72,7 +71,10 @@ defmodule ClaudeSDK.Transport.CLIDiscovery do
 
   defp search_known_locations do
     Enum.find_value(@known_locations, {:error, :not_found}, fn path ->
-      if File.exists?(path), do: {:ok, path}
+      case File.stat(path) do
+        {:ok, %File.Stat{type: :regular}} -> {:ok, path}
+        _ -> nil
+      end
     end)
   end
 end

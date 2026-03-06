@@ -162,7 +162,7 @@ defmodule ClaudeSDK.LivePermissionTest do
       result = find_result(messages)
       assert result != nil
 
-      text = extract_text(messages)
+      _text = extract_text(messages)
       # Claude should indicate it couldn't use Bash, or the result should show it was blocked
       assert result != nil
     end

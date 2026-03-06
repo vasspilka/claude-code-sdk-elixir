@@ -91,5 +91,16 @@ defmodule ClaudeSDK.Transport.LineBufferTest do
 
       assert [%{"type" => "ok"}] = messages
     end
+
+    @tag :capture_log
+    test "discards buffer when exceeding max size limit" do
+      buf = LineBuffer.new()
+      # Create data exceeding 10MB limit
+      large_data = String.duplicate("x", 10_485_761)
+      {new_buf, messages} = LineBuffer.append(buf, large_data)
+
+      assert new_buf.buffer == ""
+      assert messages == []
+    end
   end
 end

@@ -1,5 +1,5 @@
 defmodule ClaudeSDK.Transport.CLIDiscoveryCoverageTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case
 
   alias ClaudeSDK.Transport.CLIDiscovery
 
@@ -39,6 +39,32 @@ defmodule ClaudeSDK.Transport.CLIDiscoveryCoverageTest do
     end
   end
 
+  describe "find_cli(nil) when claude is not on PATH" do
+    test "falls through to search_known_locations" do
+      # Temporarily set PATH to empty to ensure claude is not found via find_executable
+      original_path = System.get_env("PATH")
+
+      try do
+        System.put_env("PATH", "/nonexistent_dir_for_test")
+        # This will try System.find_executable("claude") -> nil,
+        # then search_known_locations which checks /usr/local/bin/claude etc.
+        # Since those likely don't exist either, we expect :not_found
+        result = CLIDiscovery.find_cli(nil)
+
+        case result do
+          {:ok, path} ->
+            # One of the known locations exists (unlikely but valid)
+            assert File.exists?(path)
+
+          {:error, :not_found} ->
+            # Expected path when claude isn't in known locations
+            assert true
+        end
+      after
+        System.put_env("PATH", original_path)
+      end
+    end
+  end
 
   describe "version/1" do
     test "returns error for non-existent binary" do

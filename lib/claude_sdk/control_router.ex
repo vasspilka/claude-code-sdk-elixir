@@ -36,7 +36,8 @@ defmodule ClaudeSDK.ControlRouter do
   the request subtype.
   """
   @spec dispatch(map(), handler_registry()) :: {:handled, map()} | {:unhandled, map()}
-  def dispatch(%{"request_id" => request_id, "request" => request} = raw, handlers) do
+  def dispatch(%{"request_id" => request_id, "request" => request} = raw, handlers)
+      when is_binary(request_id) and is_map(request) do
     subtype = request["subtype"]
 
     case Map.get(handlers, subtype) do

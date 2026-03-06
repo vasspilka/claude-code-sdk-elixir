@@ -239,21 +239,20 @@ defmodule ClaudeSDK.Transport.CommandBuilderTest do
       assert {:ok, ^thinking} = Jason.decode(Enum.at(args, idx + 1))
     end
 
-    test "adds --output-format as encoded JSON when output_format is set" do
+    test "output_format does not add a second --output-format (would break stream-json protocol)" do
       output_format = %{"type" => "json", "schema" => %{"key" => "value"}}
       args = CommandBuilder.build_args(%Options{output_format: output_format})
 
-      # Find the second --output-format (first is from base_args with "stream-json")
       indices =
         args
         |> Enum.with_index()
         |> Enum.filter(fn {val, _} -> val == "--output-format" end)
         |> Enum.map(fn {_, idx} -> idx end)
 
-      # There should be at least 2: base "stream-json" and the JSON one
-      assert length(indices) >= 2
-      last_idx = List.last(indices)
-      assert {:ok, ^output_format} = Jason.decode(Enum.at(args, last_idx + 1))
+      # Only the base "stream-json" should be present
+      assert length(indices) == 1
+      [idx] = indices
+      assert Enum.at(args, idx + 1) == "stream-json"
     end
 
     test "adds --sandbox as encoded JSON" do

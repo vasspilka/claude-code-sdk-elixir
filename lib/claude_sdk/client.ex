@@ -578,11 +578,13 @@ defmodule ClaudeSDK.Client do
         init_request = %{
           type: "control_request",
           request_id: ClaudeSDK.generate_request_id(),
-          request: %{
-            subtype: "initialize",
-            hooks: opts.hooks,
-            agents: normalize_agents(opts.agents)
-          }
+          request:
+            %{
+              subtype: "initialize",
+              hooks: opts.hooks,
+              agents: normalize_agents(opts.agents)
+            }
+            |> maybe_put_plugins(opts.plugins)
         }
 
         Subprocess.send_message(pid, init_request)
@@ -722,6 +724,12 @@ defmodule ClaudeSDK.Client do
 
     :ok
   end
+
+  defp maybe_put_plugins(request, nil), do: request
+  defp maybe_put_plugins(request, []), do: request
+
+  defp maybe_put_plugins(request, plugins) when is_list(plugins),
+    do: Map.put(request, :plugins, plugins)
 
   defp normalize_agents(agents) when is_list(agents) do
     Enum.map(agents, fn

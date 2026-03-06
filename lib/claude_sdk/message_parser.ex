@@ -136,9 +136,11 @@ defmodule ClaudeSDK.MessageParser do
   # Control request
 
   defp parse_control_request(raw) do
+    request = raw["request"]
+
     %ControlRequest{
       request_id: raw["request_id"] || "",
-      request: raw["request"] || %{}
+      request: if(is_map(request), do: request, else: %{})
     }
   end
 

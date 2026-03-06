@@ -1,5 +1,5 @@
 defmodule ClaudeSDK.Transport.SubprocessCoverageTest do
-  use ExUnit.Case
+  use ExUnit.Case, async: true
 
   alias ClaudeSDK.Transport.Subprocess
   alias ClaudeSDK.Types.Options
@@ -52,6 +52,7 @@ defmodule ClaudeSDK.Transport.SubprocessCoverageTest do
   end
 
   describe "non-zero exit status" do
+    @tag :capture_log
     test "sends {:claude_exit, {:error, code}} for non-zero exit" do
       # Create a script that exits with code 1
       script_path = Path.join(System.tmp_dir!(), "mock_cli_exit_1.sh")
@@ -82,7 +83,9 @@ defmodule ClaudeSDK.Transport.SubprocessCoverageTest do
 
   describe "CLI not found" do
     test "returns CLINotFoundError for non-existent path" do
-      result = Subprocess.start(caller: self(), options: %Options{cli_path: "/nonexistent/claude"})
+      result =
+        Subprocess.start(caller: self(), options: %Options{cli_path: "/nonexistent/claude"})
+
       assert {:error, %ClaudeSDK.CLINotFoundError{}} = result
     end
   end
@@ -116,6 +119,38 @@ defmodule ClaudeSDK.Transport.SubprocessCoverageTest do
       assert_receive {:claude_message, %{"type" => "result"}}, 5000
 
       Subprocess.stop(pid)
+    end
+  end
+
+  describe "noeol handling (lines exceeding Port line limit)" do
+    @mock_cli_long_line Path.expand("../../support/mock_cli_long_line.sh", __DIR__)
+
+    test "handles chunked lines that exceed Port {:line, N} limit" do
+      {:ok, pid} =
+        Subprocess.start(caller: self(), options: %Options{cli_path: @mock_cli_long_line})
+
+      Subprocess.send_message(pid, %{
+        type: "control_request",
+        request_id: "req_test",
+        request: %{subtype: "initialize"}
+      })
+
+      assert_receive {:claude_message, %{"type" => "control_response"}}, 5000
+
+      Subprocess.send_message(pid, %{
+        type: "user",
+        session_id: "default",
+        message: %{role: "user", content: "hello"},
+        parent_tool_use_id: nil
+      })
+
+      # Should receive the long assistant message (assembled from noeol chunks)
+      assert_receive {:claude_message, %{"type" => "assistant"}}, 10_000
+      # And the result
+      assert_receive {:claude_message, %{"type" => "result"}}, 5000
+
+      # Process may have already exited after sending result
+      if Process.alive?(pid), do: Subprocess.stop(pid)
     end
   end
 

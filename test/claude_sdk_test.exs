@@ -1,5 +1,5 @@
 defmodule ClaudeSDKTest do
-  use ExUnit.Case
+  use ExUnit.Case, async: true
 
   alias ClaudeSDK.Types.{AssistantMessage, Options, ResultMessage, SystemMessage, TextBlock}
 

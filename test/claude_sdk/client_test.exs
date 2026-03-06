@@ -1,5 +1,5 @@
 defmodule ClaudeSDK.ClientTest do
-  use ExUnit.Case
+  use ExUnit.Case, async: true
 
   alias ClaudeSDK.Client
   alias ClaudeSDK.Types.Options

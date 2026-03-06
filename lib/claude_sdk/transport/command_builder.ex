@@ -47,7 +47,6 @@ defmodule ClaudeSDK.Transport.CommandBuilder do
     |> maybe_add("--effort", opts.effort)
     |> add_json_opt("--thinking", opts.thinking)
     |> add_json_opt("--json-schema", opts.json_schema)
-    |> add_json_opt("--output-format", opts.output_format)
     |> add_json_opt("--settings", opts.settings)
     |> maybe_add_list("--setting-sources", opts.setting_sources)
     |> add_json_opt("--sandbox", opts.sandbox)

@@ -148,11 +148,13 @@ defmodule ClaudeSDK do
     init_request = %{
       type: "control_request",
       request_id: generate_request_id(),
-      request: %{
-        subtype: "initialize",
-        hooks: opts.hooks,
-        agents: normalize_agents(opts.agents)
-      }
+      request:
+        %{
+          subtype: "initialize",
+          hooks: opts.hooks,
+          agents: normalize_agents(opts.agents)
+        }
+        |> maybe_put_plugins(opts.plugins)
     }
 
     Subprocess.send_message(pid, init_request)
@@ -286,6 +288,12 @@ defmodule ClaudeSDK do
 
   defp normalize_agents(agents) when is_map(agents), do: agents
   defp normalize_agents(_), do: %{}
+
+  defp maybe_put_plugins(request, nil), do: request
+  defp maybe_put_plugins(request, []), do: request
+
+  defp maybe_put_plugins(request, plugins) when is_list(plugins),
+    do: Map.put(request, :plugins, plugins)
 
   defp build_mcp_tool_index([]), do: %{}
   defp build_mcp_tool_index(nil), do: %{}

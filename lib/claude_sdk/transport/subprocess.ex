@@ -128,14 +128,27 @@ defmodule ClaudeSDK.Transport.Subprocess do
 
   @impl true
   def handle_info({port, {:data, {:eol, line}}}, %{port: port} = state) do
-    case LineBuffer.parse_line(line) do
+    # When a line exceeds the Port's {:line, N} limit, it arrives as
+    # one or more {:noeol, chunk} messages followed by a final {:eol, remainder}.
+    # Combine any buffered noeol chunks with this eol remainder.
+    full_line =
+      if state.buffer.buffer == "" do
+        line
+      else
+        state.buffer.buffer <> line
+      end
+
+    case LineBuffer.parse_line(full_line) do
       {:ok, parsed} ->
         send(state.caller, {:claude_message, parsed})
-        {:noreply, state}
+        {:noreply, %{state | buffer: LineBuffer.new()}}
 
       {:error, _} ->
-        Logger.debug("Skipping non-JSON line from CLI: #{inspect(line)}")
-        {:noreply, state}
+        Logger.debug(
+          "Skipping non-JSON line from CLI: #{inspect(String.slice(full_line, 0, 200))}"
+        )
+
+        {:noreply, %{state | buffer: LineBuffer.new()}}
     end
   end
 

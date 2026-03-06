@@ -1,5 +1,5 @@
 defmodule ClaudeSDK.ClientCoverageTest do
-  use ExUnit.Case
+  use ExUnit.Case, async: true
 
   alias ClaudeSDK.Client
   alias ClaudeSDK.Types.Options
@@ -31,6 +31,24 @@ defmodule ClaudeSDK.ClientCoverageTest do
           end
         )
       end
+    end
+
+    @tag :capture_log
+    test "handles client death during callback cleanup" do
+      result =
+        Client.with_client(
+          [options: %Options{cli_path: @mock_cli_multiturn}],
+          fn client ->
+            # Unlink so killing the client doesn't kill the test process
+            Process.unlink(client)
+            # Kill the client process — close in the after block will catch :exit
+            Process.exit(client, :kill)
+            Process.sleep(50)
+            :callback_done
+          end
+        )
+
+      assert result == :callback_done
     end
 
     @tag :capture_log
@@ -404,7 +422,20 @@ defmodule ClaudeSDK.ClientCoverageTest do
       send(self(), {:client_message, %{"no_type" => true}})
 
       # Then send a valid result
-      send(self(), {:client_message, %{"type" => "result", "subtype" => "success", "is_error" => false, "result" => "done", "session_id" => "s1", "num_turns" => 1, "duration_ms" => 100, "duration_api_ms" => 80}})
+      send(
+        self(),
+        {:client_message,
+         %{
+           "type" => "result",
+           "subtype" => "success",
+           "is_error" => false,
+           "result" => "done",
+           "session_id" => "s1",
+           "num_turns" => 1,
+           "duration_ms" => 100,
+           "duration_api_ms" => 80
+         }}
+      )
 
       # Consume messages manually using the receive_client_messages flow
       # The first message (no type) should be skipped, second should produce result
@@ -465,6 +496,7 @@ defmodule ClaudeSDK.ClientCoverageTest do
   end
 
   describe "with_client default args" do
+    @tag :capture_log
     test "with_client works with default empty opts override" do
       # Exercise the with_client default opts path with a crash-on-init mock
       crash_init = Path.expand("../support/mock_cli_crash_on_init.sh", __DIR__)
@@ -714,6 +746,178 @@ defmodule ClaudeSDK.ClientCoverageTest do
 
       messages = Client.query(client, "Hello") |> Enum.to_list()
       assert length(messages) > 0
+
+      Client.close(client)
+    end
+  end
+
+  describe "plugins option in Client" do
+    test "handles plugins as empty list" do
+      opts = %Options{
+        cli_path: @mock_cli_multiturn,
+        plugins: []
+      }
+
+      {:ok, client} = Client.start_link(options: opts)
+      :ok = Client.connect(client)
+
+      messages = Client.query(client, "Hello") |> Enum.to_list()
+      assert length(messages) > 0
+
+      Client.close(client)
+    end
+
+    test "handles plugins as non-empty list" do
+      opts = %Options{
+        cli_path: @mock_cli_multiturn,
+        plugins: ["my-plugin"]
+      }
+
+      {:ok, client} = Client.start_link(options: opts)
+      :ok = Client.connect(client)
+
+      messages = Client.query(client, "Hello") |> Enum.to_list()
+      assert length(messages) > 0
+
+      Client.close(client)
+    end
+  end
+
+  describe "maybe_forward_to_caller with no active caller" do
+    @tag :capture_log
+    test "unhandled control_request is ignored when no active caller" do
+      opts = %Options{cli_path: @mock_cli_multiturn}
+      {:ok, client} = Client.start_link(options: opts)
+      :ok = Client.connect(client)
+
+      # In :connected state with no active_caller, send an unhandled control_request
+      send(
+        client,
+        {:claude_message,
+         %{
+           "type" => "control_request",
+           "request_id" => "req_x",
+           "request" => %{"subtype" => "unknown"}
+         }}
+      )
+
+      Process.sleep(50)
+      # Client should still work
+      messages = Client.query(client, "hello") |> Enum.to_list()
+      assert length(messages) > 0
+
+      Client.close(client)
+    end
+  end
+
+  describe "parse_rewind_response fallback" do
+    @tag :capture_log
+    test "rewind with response lacking success and error keys returns :ok" do
+      hang_mock = Path.expand("../support/mock_cli_hang_on_control.sh", __DIR__)
+      opts = %Options{cli_path: hang_mock}
+      {:ok, client} = Client.start_link(options: opts)
+      :ok = Client.connect(client)
+
+      _messages = Client.query(client, "hello") |> Enum.to_list()
+
+      task =
+        Task.async(fn ->
+          Client.rewind_files(client, "msg-456")
+        end)
+
+      Process.sleep(100)
+
+      # Send a control_response without success or error keys
+      send(
+        client,
+        {:claude_message, %{"type" => "control_response", "response" => %{"request_id" => "r1"}}}
+      )
+
+      assert :ok = Task.await(task)
+
+      Client.close(client)
+    end
+  end
+
+  describe "cli_exit during awaiting_rewind" do
+    @tag :capture_log
+    test "cli_exit while awaiting rewind notifies caller with error" do
+      hang_mock = Path.expand("../support/mock_cli_hang_on_control.sh", __DIR__)
+      opts = %Options{cli_path: hang_mock}
+      {:ok, client} = Client.start_link(options: opts)
+      :ok = Client.connect(client)
+
+      _messages = Client.query(client, "hello") |> Enum.to_list()
+
+      task =
+        Task.async(fn ->
+          Client.rewind_files(client, "msg-789")
+        end)
+
+      Process.sleep(100)
+
+      # Simulate CLI exit while awaiting rewind
+      send(client, {:claude_exit, {:error, 1}})
+
+      assert {:error, {:cli_exited, _}} = Task.await(task)
+
+      Client.close(client)
+    end
+  end
+
+  describe "cancel_control_timer flush" do
+    @tag :capture_log
+    test "flushes timer message when it arrives before cancellation" do
+      hang_mock = Path.expand("../support/mock_cli_hang_on_control.sh", __DIR__)
+      opts = %Options{cli_path: hang_mock}
+      {:ok, client} = Client.start_link(options: opts)
+      :ok = Client.connect(client)
+
+      _messages = Client.query(client, "hello") |> Enum.to_list()
+
+      # Start a control request (get_mcp_status) which sets a 30s timer
+      task = Task.async(fn -> Client.get_mcp_status(client) end)
+      Process.sleep(100)
+
+      # Send the control_timeout message directly to simulate timer firing
+      # before the response arrives
+      send(client, :control_timeout)
+      Process.sleep(50)
+
+      # Now send the actual response — the timer should have been handled
+      send(
+        client,
+        {:claude_message, %{"type" => "control_response", "response" => %{"status" => "ok"}}}
+      )
+
+      # The task should get the timeout error (since :control_timeout arrived first)
+      assert {:error, :control_timeout} = Task.await(task)
+
+      Client.close(client)
+    end
+  end
+
+  describe "cli_exit during awaiting_control_response" do
+    @tag :capture_log
+    test "cli_exit while awaiting control response notifies caller" do
+      hang_mock = Path.expand("../support/mock_cli_hang_on_control.sh", __DIR__)
+      opts = %Options{cli_path: hang_mock}
+      {:ok, client} = Client.start_link(options: opts)
+      :ok = Client.connect(client)
+
+      _messages = Client.query(client, "hello") |> Enum.to_list()
+
+      task =
+        Task.async(fn ->
+          Client.get_mcp_status(client)
+        end)
+
+      Process.sleep(100)
+
+      # Simulate CLI exit while awaiting control response
+      send(client, {:claude_exit, {:error, 1}})
+
+      assert {:error, {:cli_exited, _}} = Task.await(task)
 
       Client.close(client)
     end

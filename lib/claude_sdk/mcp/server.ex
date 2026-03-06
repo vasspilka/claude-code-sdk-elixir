@@ -221,9 +221,22 @@ defmodule ClaudeSDK.MCP.Server do
 
     Logger.warning("MCP tool result truncated: #{original_size} bytes exceeds 1MB limit")
 
-    truncated = binary_part(text, 0, @max_result_bytes)
+    truncated = truncate_utf8_safe(text, @max_result_bytes)
     truncated <> "\n... [truncated: result exceeded 1MB limit]"
   end
 
   defp maybe_truncate(text), do: text
+
+  # Truncate to at most max_bytes while preserving valid UTF-8.
+  # binary_part/3 can split a multi-byte codepoint; this trims any
+  # trailing incomplete bytes so the result is always valid UTF-8.
+  defp truncate_utf8_safe(text, max_bytes) do
+    raw = binary_part(text, 0, max_bytes)
+
+    case :unicode.characters_to_binary(raw) do
+      {:incomplete, valid, _} -> valid
+      {:error, valid, _} -> valid
+      valid when is_binary(valid) -> valid
+    end
+  end
 end

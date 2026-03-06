@@ -102,6 +102,40 @@ defmodule ClaudeSDK.MCP.ServerCoverageTest do
     end
   end
 
+  describe "truncate_utf8_safe edge cases" do
+    @tag :capture_log
+    test "truncation splitting a multi-byte codepoint produces valid UTF-8" do
+      # Build a >1MB string that ends with multi-byte characters (emoji = 4 bytes each)
+      padding = String.duplicate("a", 1_048_570)
+      # Add enough emoji to push over 1MB; truncation will split mid-codepoint
+      emoji_tail = String.duplicate("🎉", 10)
+      large_string = padding <> emoji_tail
+
+      tool = %Tool{
+        name: "utf8_tool",
+        description: "Returns multi-byte data",
+        input_schema: %{},
+        handler: fn _args -> {:ok, large_string} end
+      }
+
+      server = Server.create("utf8-server", "1.0", [tool])
+      index = Server.build_tool_index([server])
+
+      jsonrpc = %{
+        "jsonrpc" => "2.0",
+        "id" => 1,
+        "method" => "tools/call",
+        "params" => %{"name" => "utf8_tool", "arguments" => %{}}
+      }
+
+      assert {:result, response} = Server.handle_jsonrpc("utf8-server", jsonrpc, index)
+      [content] = response.jsonrpc_response["result"]["content"]
+      assert content["text"] =~ "truncated: result exceeded 1MB limit"
+      # Result must be valid UTF-8
+      assert String.valid?(content["text"])
+    end
+  end
+
   describe "handle_jsonrpc with missing params fields" do
     test "handles missing name in params" do
       tool = %Tool{
