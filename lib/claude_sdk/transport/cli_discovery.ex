@@ -2,6 +2,9 @@ defmodule ClaudeSDK.Transport.CLIDiscovery do
   @moduledoc """
   Finds the Claude CLI binary on the system.
 
+  This is an internal module used by `ClaudeSDK.Transport.Subprocess`.
+  You do not need to use it directly -- the CLI is discovered automatically.
+
   Resolution order:
   1. Explicit path provided via `Options.cli_path` (if it exists on disk).
   2. `System.find_executable/1` searching the system PATH.

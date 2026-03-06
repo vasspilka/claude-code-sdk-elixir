@@ -229,6 +229,7 @@ defmodule ClaudeSDK.ControlRouterTest do
   end
 
   describe "handler crash safety" do
+    @tag :capture_log
     test "handler raising an exception returns error response instead of crashing" do
       handler = fn _request -> raise "boom" end
       handlers = %{"can_use_tool" => handler}
@@ -246,6 +247,7 @@ defmodule ClaudeSDK.ControlRouterTest do
       assert response.response.reason =~ "Handler error: boom"
     end
 
+    @tag :capture_log
     test "handler returning unexpected value returns deny response" do
       handler = fn _request -> :unexpected_value end
       handlers = %{"can_use_tool" => handler}
@@ -261,6 +263,7 @@ defmodule ClaudeSDK.ControlRouterTest do
       assert response.response.reason == "Invalid handler response"
     end
 
+    @tag :capture_log
     test "handler raising ArgumentError is caught and reported" do
       handler = fn _request -> raise ArgumentError, "bad arg" end
       handlers = %{"test_handler" => handler}

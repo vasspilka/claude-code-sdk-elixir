@@ -32,15 +32,15 @@ while read -r user_line; do
   if [ "$msg_type" = "control_request" ]; then
     # Extract request_id for the control request
     ctrl_req_id=$(echo "$user_line" | grep -o '"request_id":"[^"]*"' | head -1 | cut -d'"' -f4)
-    echo "{\"type\":\"control_response\",\"response\":{\"request_id\":\"$ctrl_req_id\",\"success\":true}}"
+    echo "{\"type\":\"control_response\",\"response\":{\"request_id\":\"$ctrl_req_id\",\"success\":true}}" 2>/dev/null
     continue
   fi
 
   # Send assistant response for this turn
-  echo "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"Turn $turn response.\"}],\"model\":\"mock-model\"},\"parent_tool_use_id\":null,\"error\":null}"
+  echo "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"Turn $turn response.\"}],\"model\":\"mock-model\"},\"parent_tool_use_id\":null,\"error\":null}" 2>/dev/null || true
 
   # Send result
-  echo "{\"type\":\"result\",\"subtype\":\"success\",\"duration_ms\":100,\"duration_api_ms\":80,\"is_error\":false,\"num_turns\":$turn,\"session_id\":\"mock-session-$turn\",\"total_cost_usd\":0.001,\"usage\":{\"input_tokens\":10,\"output_tokens\":5},\"result\":\"Turn $turn done.\"}"
+  echo "{\"type\":\"result\",\"subtype\":\"success\",\"duration_ms\":100,\"duration_api_ms\":80,\"is_error\":false,\"num_turns\":$turn,\"session_id\":\"mock-session-$turn\",\"total_cost_usd\":0.001,\"usage\":{\"input_tokens\":10,\"output_tokens\":5},\"result\":\"Turn $turn done.\"}" 2>/dev/null || true
 done
 
 exit 0

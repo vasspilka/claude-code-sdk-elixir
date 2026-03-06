@@ -31,9 +31,9 @@ while read -r line; do
     subtype=$(echo "$line" | grep -o '"subtype":"[^"]*"' | head -1 | cut -d'"' -f4)
 
     if [ "$subtype" = "rewind_files" ]; then
-      echo "{\"type\":\"control_response\",\"response\":{\"request_id\":\"$ctrl_req_id\",\"success\":true}}"
+      echo "{\"type\":\"control_response\",\"response\":{\"request_id\":\"$ctrl_req_id\",\"success\":true}}" 2>/dev/null || true
     else
-      echo "{\"type\":\"control_response\",\"response\":{\"request_id\":\"$ctrl_req_id\",\"subtype\":\"success\"}}"
+      echo "{\"type\":\"control_response\",\"response\":{\"request_id\":\"$ctrl_req_id\",\"subtype\":\"success\"}}" 2>/dev/null || true
     fi
     continue
   fi
@@ -41,10 +41,10 @@ while read -r line; do
   turn=$((turn + 1))
 
   # Send assistant response
-  echo "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"Turn $turn response.\"}],\"model\":\"mock-model\"},\"parent_tool_use_id\":null,\"error\":null}"
+  echo "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"Turn $turn response.\"}],\"model\":\"mock-model\"},\"parent_tool_use_id\":null,\"error\":null}" 2>/dev/null || true
 
   # Send result
-  echo "{\"type\":\"result\",\"subtype\":\"success\",\"duration_ms\":100,\"duration_api_ms\":80,\"is_error\":false,\"num_turns\":$turn,\"session_id\":\"mock-session-$turn\",\"total_cost_usd\":0.001,\"usage\":{\"input_tokens\":10,\"output_tokens\":5},\"result\":\"Turn $turn done.\"}"
+  echo "{\"type\":\"result\",\"subtype\":\"success\",\"duration_ms\":100,\"duration_api_ms\":80,\"is_error\":false,\"num_turns\":$turn,\"session_id\":\"mock-session-$turn\",\"total_cost_usd\":0.001,\"usage\":{\"input_tokens\":10,\"output_tokens\":5},\"result\":\"Turn $turn done.\"}" 2>/dev/null || true
 done
 
 exit 0

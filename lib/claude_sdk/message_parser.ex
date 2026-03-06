@@ -2,6 +2,10 @@ defmodule ClaudeSDK.MessageParser do
   @moduledoc """
   Parses raw JSON maps from the CLI into typed message structs.
 
+  This module is used internally by `ClaudeSDK.query/2` and `ClaudeSDK.Client`.
+  You do not need to call it directly -- messages are automatically parsed
+  before they appear in the stream.
+
   Routes on the `"type"` field and delegates content block parsing
   for assistant messages.
   """

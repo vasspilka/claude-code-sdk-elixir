@@ -22,7 +22,7 @@ defmodule ClaudeSDK.Types.AgentDefinition do
         name: "researcher",
         description: "Searches codebase for relevant information",
         prompt: "You are a research assistant. Find relevant code and docs.",
-        model: "claude-sonnet-4-20250514",
+        model: "claude-sonnet-4-6",
         tools: ["Read", "Glob", "Grep"]
       }
   """

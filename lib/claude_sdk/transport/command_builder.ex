@@ -2,6 +2,9 @@ defmodule ClaudeSDK.Transport.CommandBuilder do
   @moduledoc """
   Converts a `ClaudeSDK.Types.Options` struct into CLI arguments and environment variables.
 
+  This is an internal module used by `ClaudeSDK.Transport.Subprocess`.
+  You do not need to use it directly.
+
   Translates each Options field into the corresponding `claude` CLI flag or
   environment variable. Handles type conversions (atoms to CLI strings, maps
   to JSON, lists to comma-separated values) and builds the in-process MCP

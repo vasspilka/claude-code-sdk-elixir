@@ -14,7 +14,7 @@ defmodule ClaudeSDK do
   ## With Options
 
       ClaudeSDK.query("Explain this code", %ClaudeSDK.Types.Options{
-        model: "claude-sonnet-4-20250514",
+        model: "claude-sonnet-4-6",
         max_turns: 3,
         permission_mode: :bypass_permissions
       })
@@ -46,6 +46,12 @@ defmodule ClaudeSDK do
 
       ClaudeSDK.query("Use the greet tool", %ClaudeSDK.Types.Options{mcp_servers: [server]})
       |> Enum.each(&IO.inspect/1)
+
+  ## See Also
+
+  - `ClaudeSDK.Client` — stateful multi-turn conversations with session persistence
+  - `ClaudeSDK.Types.Options` — all available configuration options
+  - `ClaudeSDK.MCP.Tool` — defining custom MCP tools
   """
 
   require Logger

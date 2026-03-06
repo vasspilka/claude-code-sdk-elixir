@@ -13,7 +13,7 @@ defmodule ClaudeSDK.Types.Options do
 
       # With options
       ClaudeSDK.query("Explain GenServers", %Options{
-        model: "claude-sonnet-4-20250514",
+        model: "claude-sonnet-4-6",
         system_prompt: "You are a concise Elixir tutor.",
         max_turns: 3,
         permission_mode: :bypass_permissions
@@ -31,7 +31,7 @@ defmodule ClaudeSDK.Types.Options do
 
   ### Model
 
-  - `model` — Model identifier (e.g. `"claude-sonnet-4-20250514"`).
+  - `model` — Model identifier (e.g. `"claude-sonnet-4-6"`).
   - `fallback_model` — Fallback if the primary model is unavailable.
 
   ### Tool Configuration
@@ -39,8 +39,9 @@ defmodule ClaudeSDK.Types.Options do
   - `tools` — Tool set: `:default` for built-in tools, or a list of tool name strings.
   - `allowed_tools` — Allowlist of tool names. Only these tools may be used.
   - `disallowed_tools` — Denylist of tool names. These tools are blocked.
-  - `can_use_tool` — Callback invoked for each tool call. Receives `(tool_name, input)`
-    and must return `:allow`, `{:allow, updated_input}`, or `{:deny, reason}`.
+  - `can_use_tool` — Callback invoked for each tool call. Accepts either arity-2
+    `(tool_name, input)` or arity-3 `(tool_name, input, %ToolPermissionContext{})`.
+    Must return `:allow`, `{:allow, updated_input}`, `:deny`, or `{:deny, reason}`.
 
   ### Limits
 
@@ -54,7 +55,8 @@ defmodule ClaudeSDK.Types.Options do
 
   ### Session Management
 
-  - `session_id` — Session identifier (default: `"default"`).
+  - `session_id` — Session identifier (default: `"default"`). All queries share a single
+    session unless explicitly overridden.
   - `continue` — If `true`, continue the most recent session.
   - `resume` — Resume a specific session by its ID string.
   - `fork_session` — If `true`, fork the current session instead of continuing it.
@@ -116,8 +118,10 @@ defmodule ClaudeSDK.Types.Options do
   - `settings` — Map of CLI settings to override.
   - `setting_sources` — List of setting source paths.
   - `plugin_dirs` — List of plugin directory paths.
-  - `hooks` — Hook configuration map (sent via initialize, not as CLI args).
-  - `agents` — Agent configuration map (sent via initialize, not as CLI args).
+  - `hooks` — Shell commands that run in response to lifecycle events (e.g. tool calls,
+    notifications). Passed as a map keyed by event name, sent via initialize (not as CLI args).
+  - `agents` — Agent definitions sent via initialize (not as CLI args). Accepts either a
+    list of `%AgentDefinition{}` structs or a raw map.
   - `env` — Extra environment variables as a map of string key-value pairs.
   - `extra_args` — Escape hatch: additional raw CLI argument strings.
 
@@ -132,11 +136,11 @@ defmodule ClaudeSDK.Types.Options do
 
   @type can_use_tool_callback ::
           (tool_name :: String.t(), input :: map() ->
-             :allow | {:allow, map()} | {:deny, String.t()})
+             :allow | {:allow, map()} | :deny | {:deny, String.t()})
           | (tool_name :: String.t(),
              input :: map(),
              context :: ClaudeSDK.Types.ToolPermissionContext.t() ->
-               :allow | {:allow, map()} | {:deny, String.t()})
+               :allow | {:allow, map()} | :deny | {:deny, String.t()})
 
   @type t :: %__MODULE__{
           # CLI path override (nil = auto-discover)

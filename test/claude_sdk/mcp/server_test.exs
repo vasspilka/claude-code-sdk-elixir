@@ -251,6 +251,7 @@ defmodule ClaudeSDK.MCP.ServerTest do
       assert response.jsonrpc_response["error"]["code"] == -32601
     end
 
+    @tag :capture_log
     test "truncates results exceeding 1MB" do
       large_tool = %Tool{
         name: "large",

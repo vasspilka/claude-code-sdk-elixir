@@ -20,7 +20,51 @@ defmodule ClaudeSDK.MixProject do
   defp docs do
     [
       main: "readme",
-      extras: ["README.md", "CHANGELOG.md", "LICENSE"]
+      extras: ["README.md", "CHANGELOG.md", "LICENSE"],
+      groups_for_modules: [
+        Core: [ClaudeSDK, ClaudeSDK.Client],
+        MCP: [ClaudeSDK.MCP.Server, ClaudeSDK.MCP.Tool],
+        "Message Types": [
+          ClaudeSDK.Types.AssistantMessage,
+          ClaudeSDK.Types.UserMessage,
+          ClaudeSDK.Types.SystemMessage,
+          ClaudeSDK.Types.ResultMessage,
+          ClaudeSDK.Types.StreamEvent,
+          ClaudeSDK.Types.ControlRequest,
+          ClaudeSDK.Types.ControlResponse,
+          ClaudeSDK.Types.TaskStartedMessage,
+          ClaudeSDK.Types.TaskProgressMessage,
+          ClaudeSDK.Types.TaskNotificationMessage
+        ],
+        "Content Blocks": [
+          ClaudeSDK.Types.TextBlock,
+          ClaudeSDK.Types.ThinkingBlock,
+          ClaudeSDK.Types.ToolUseBlock,
+          ClaudeSDK.Types.ToolResultBlock
+        ],
+        Configuration: [
+          ClaudeSDK.Types.Options,
+          ClaudeSDK.Types.AgentDefinition,
+          ClaudeSDK.Types.ThinkingConfig,
+          ClaudeSDK.Types.SandboxSettings,
+          ClaudeSDK.Types.ToolPermissionContext
+        ],
+        Errors: [
+          ClaudeSDK.CLINotFoundError,
+          ClaudeSDK.TransportError,
+          ClaudeSDK.ProtocolError,
+          ClaudeSDK.QueryError,
+          ClaudeSDK.TimeoutError
+        ],
+        Internal: [
+          ClaudeSDK.MessageParser,
+          ClaudeSDK.ControlRouter,
+          ClaudeSDK.Transport.Subprocess,
+          ClaudeSDK.Transport.CommandBuilder,
+          ClaudeSDK.Transport.CLIDiscovery,
+          ClaudeSDK.Transport.LineBuffer
+        ]
+      ]
     ]
   end
 

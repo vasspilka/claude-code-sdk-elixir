@@ -5,6 +5,27 @@ defmodule ClaudeSDK.MCP.Server do
   Provides functions to create server configs, generate CLI-compatible
   configurations, build tool lookup indexes, and handle JSONRPC messages
   from the CLI.
+
+  Most users should use `ClaudeSDK.create_mcp_server/3` rather than calling
+  this module directly.
+
+  ## Example
+
+      server = ClaudeSDK.create_mcp_server("my-tools", "1.0", [
+        %ClaudeSDK.MCP.Tool{
+          name: "greet",
+          description: "Greet a user by name",
+          input_schema: %{
+            "type" => "object",
+            "properties" => %{"name" => %{"type" => "string"}},
+            "required" => ["name"]
+          },
+          handler: fn %{"name" => name} -> {:ok, "Hello, \#{name}!"} end
+        }
+      ])
+
+      ClaudeSDK.query("Greet Alice", %ClaudeSDK.Types.Options{mcp_servers: [server]})
+      |> Enum.each(&IO.inspect/1)
   """
 
   require Logger
@@ -75,8 +96,14 @@ defmodule ClaudeSDK.MCP.Server do
   @doc """
   Handle a JSONRPC message for a specific MCP server.
 
-  Routes `tools/call` methods to the appropriate tool handler and returns
-  a `{:result, response_map}` tuple with the JSONRPC response.
+  Supports three methods:
+
+  - `tools/call` — dispatches the call to the matching tool handler and returns
+    the handler result (or a tool-not-found error).
+  - `tools/list` — returns the list of tools registered for the given server.
+  - Any other method — returns a JSONRPC "method not supported" error.
+
+  Always returns a `{:result, response_map}` tuple with the JSONRPC response.
   """
   @spec handle_jsonrpc(String.t(), map(), map()) :: {:result, map()}
   def handle_jsonrpc(

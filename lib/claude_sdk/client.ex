@@ -6,21 +6,48 @@ defmodule ClaudeSDK.Client do
   the Client keeps a single subprocess alive across multiple queries,
   enabling multi-turn conversations with session persistence.
 
-  ## Usage
+  ## Quick Start
 
-      {:ok, client} = ClaudeSDK.Client.start_link(options: %Options{
-        permission_mode: :bypass_permissions
-      })
+  Use `with_client/2` for automatic connection and cleanup:
 
-      # First turn
+      alias ClaudeSDK.Types.Options
+
+      ClaudeSDK.Client.with_client(
+        [options: %Options{permission_mode: :bypass_permissions}],
+        fn client ->
+          ClaudeSDK.Client.query(client, "What is 2+2?")
+          |> Enum.each(&IO.inspect/1)
+
+          ClaudeSDK.Client.query(client, "Now multiply that by 3")
+          |> Enum.each(&IO.inspect/1)
+        end
+      )
+
+  ## Manual Lifecycle
+
+  For more control, manage the connection yourself. You must call
+  `connect/1` before sending queries:
+
+      {:ok, client} = ClaudeSDK.Client.start_link(options: %Options{})
+      :ok = ClaudeSDK.Client.connect(client)
+
       ClaudeSDK.Client.query(client, "What is 2+2?")
       |> Enum.each(&IO.inspect/1)
 
-      # Second turn (same session)
       ClaudeSDK.Client.query(client, "Now multiply that by 3")
       |> Enum.each(&IO.inspect/1)
 
       ClaudeSDK.Client.close(client)
+
+  ## State Machine
+
+  The client transitions through these states:
+
+  - `:disconnected` -- initial state after `start_link/1`
+  - `:connected` -- after `connect/1` succeeds; ready for queries
+  - `:streaming` -- while a `query/2` stream is active
+  - `:awaiting_rewind` -- while a `rewind_files/2` request is pending
+  - `:awaiting_control_response` -- while a control request (MCP status, etc.) is pending
   """
 
   use GenServer

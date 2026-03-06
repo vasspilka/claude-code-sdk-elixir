@@ -2,6 +2,9 @@ defmodule ClaudeSDK.ControlRouter do
   @moduledoc """
   Routes `control_request` messages to registered handler functions.
 
+  This module is used internally by `ClaudeSDK.query/2` and `ClaudeSDK.Client`.
+  You do not need to interact with it directly unless building custom integrations.
+
   Handlers are keyed by the request `subtype` field. When a control_request
   arrives during streaming, the router dispatches it to the matching handler,
   which returns a response to send back to the CLI via stdin.

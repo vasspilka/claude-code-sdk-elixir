@@ -2,6 +2,9 @@ defmodule ClaudeSDK.Transport.LineBuffer do
   @moduledoc """
   Accumulates partial data from a Port and extracts complete JSON messages.
 
+  This is an internal module used by `ClaudeSDK.Transport.Subprocess`.
+  You do not need to use it directly.
+
   The Claude CLI sends newline-delimited JSON (NDJSON). Data may arrive in
   partial chunks, so we buffer until we have complete lines, then attempt
   JSON parsing on each.

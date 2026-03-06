@@ -2,6 +2,9 @@ defmodule ClaudeSDK.Transport.Subprocess do
   @moduledoc """
   GenServer wrapping an OS Port for the Claude CLI subprocess.
 
+  This is an internal transport module used by `ClaudeSDK.query/2` and
+  `ClaudeSDK.Client`. You do not need to use it directly.
+
   Spawns the CLI, sends JSON messages via stdin, receives JSON responses
   via stdout, parses them, and forwards to the caller process.
 
