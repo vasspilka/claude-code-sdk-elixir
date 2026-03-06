@@ -11,13 +11,23 @@ defmodule ClaudeSDK.MixProject do
       deps: deps(),
       description: "Elixir SDK for the Claude Code CLI",
       package: package(),
-      source_url: "https://github.com/vasspilka/claude-code-sdk-elixir"
+      source_url: "https://github.com/vasspilka/claude-code-sdk-elixir",
+      homepage_url: "https://github.com/vasspilka/claude-code-sdk-elixir",
+      docs: docs()
+    ]
+  end
+
+  defp docs do
+    [
+      main: "readme",
+      extras: ["README.md", "CHANGELOG.md", "LICENSE"]
     ]
   end
 
   defp package do
     [
       licenses: ["MIT"],
+      files: ~w(lib .formatter.exs mix.exs README.md LICENSE CHANGELOG.md),
       links: %{
         "GitHub" => "https://github.com/vasspilka/claude-code-sdk-elixir"
       }
@@ -35,7 +45,8 @@ defmodule ClaudeSDK.MixProject do
 
   defp deps do
     [
-      {:jason, "~> 1.4"}
+      {:jason, "~> 1.4"},
+      {:ex_doc, "~> 0.34", only: :dev, runtime: false}
     ]
   end
 end
