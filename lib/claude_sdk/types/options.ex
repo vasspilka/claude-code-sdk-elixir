@@ -72,8 +72,12 @@ defmodule ClaudeSDK.Types.Options do
 
   ### Structured Output
 
-  - `json_schema` — JSON Schema map. When set, the CLI returns structured JSON
-    matching this schema in the `ResultMessage.result` field.
+  - `json_schema` — JSON Schema map. When set, the model's text response is constrained
+    to match this schema. The JSON string appears in `ResultMessage.result`.
+  - `output_format` — JSON Schema map for CLI-level structured output. When set, the
+    parsed result appears in `ResultMessage.structured_output`. This is separate from
+    `json_schema` — use `json_schema` to constrain the model's response, and `output_format`
+    to control the CLI's output structure.
 
   ### MCP (Model Context Protocol)
 
@@ -93,7 +97,8 @@ defmodule ClaudeSDK.Types.Options do
 
   ### Output Format
 
-  - `output_format` — JSON Schema map for structured output format. Maps to `--output-format` JSON.
+  - `output_format` — JSON Schema map for CLI-level structured output. Maps to
+    `--output-format` JSON. Result appears in `ResultMessage.structured_output`.
 
   ### Sandbox
 
@@ -118,8 +123,10 @@ defmodule ClaudeSDK.Types.Options do
   - `settings` — Map of CLI settings to override.
   - `setting_sources` — List of setting source paths.
   - `plugin_dirs` — List of plugin directory paths.
-  - `hooks` — Shell commands that run in response to lifecycle events (e.g. tool calls,
-    notifications). Passed as a map keyed by event name, sent via initialize (not as CLI args).
+  - `hooks` — Shell commands that run in response to lifecycle events. Passed as a map
+    keyed by event name (e.g. `"PreToolUse"`, `"PostToolUse"`, `"Notification"`), where
+    each value is a list of matcher/hook pairs. Sent via initialize (not as CLI args).
+    See [Claude Code hooks documentation](https://docs.anthropic.com/en/docs/claude-code/hooks).
   - `agents` — Agent definitions sent via initialize (not as CLI args). Accepts either a
     list of `%AgentDefinition{}` structs or a raw map.
   - `env` — Extra environment variables as a map of string key-value pairs.
@@ -294,13 +301,15 @@ defmodule ClaudeSDK.Types.Options do
   - `max_budget_usd` must be a positive number or nil
   - `permission_mode` must be one of: nil, :default, :accept_edits, :plan, :bypass_permissions
   - `effort` must be one of: nil, "low", "medium", "high", "max"
+  - `can_use_tool` must be nil or a function of arity 2 or 3
   """
   @spec validate(t()) :: :ok | {:error, String.t()}
   def validate(%__MODULE__{} = opts) do
     with :ok <- validate_max_turns(opts.max_turns),
          :ok <- validate_max_budget_usd(opts.max_budget_usd),
          :ok <- validate_permission_mode(opts.permission_mode),
-         :ok <- validate_effort(opts.effort) do
+         :ok <- validate_effort(opts.effort),
+         :ok <- validate_can_use_tool(opts.can_use_tool) do
       :ok
     end
   end
@@ -328,4 +337,11 @@ defmodule ClaudeSDK.Types.Options do
 
   defp validate_effort(effort),
     do: {:error, "effort must be one of #{inspect(@valid_efforts)}, got: #{inspect(effort)}"}
+
+  defp validate_can_use_tool(nil), do: :ok
+  defp validate_can_use_tool(f) when is_function(f, 2), do: :ok
+  defp validate_can_use_tool(f) when is_function(f, 3), do: :ok
+
+  defp validate_can_use_tool(other),
+    do: {:error, "can_use_tool must be nil or a function of arity 2 or 3, got: #{inspect(other)}"}
 end

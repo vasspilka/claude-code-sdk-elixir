@@ -17,10 +17,9 @@ defmodule ClaudeSDK.MessageParserCoverageTest do
       end
     end
 
-    test "raises ProtocolError for unknown type" do
-      assert_raise ClaudeSDK.ProtocolError, ~r/Parse failed/, fn ->
-        MessageParser.parse!(%{"type" => "totally_unknown"})
-      end
+    test "returns raw map for unknown type (forward compatibility)" do
+      raw = %{"type" => "totally_unknown", "data" => "something"}
+      assert ^raw = MessageParser.parse!(raw)
     end
   end
 

@@ -57,6 +57,7 @@ defmodule ClaudeSDK do
   require Logger
 
   alias ClaudeSDK.ControlRouter
+  alias ClaudeSDK.Internal
   alias ClaudeSDK.MessageParser
   alias ClaudeSDK.Transport.Subprocess
   alias ClaudeSDK.Types.Options
@@ -121,16 +122,7 @@ defmodule ClaudeSDK do
 
   # Stream.resource start_fun: spawn subprocess and send initialization + prompt
   defp start_subprocess(prompt, opts) do
-    # Build MCP tool index if mcp_servers are configured
-    mcp_tool_index = build_mcp_tool_index(opts.mcp_servers)
-
-    # Build handler registry for control_request dispatch
-    handler_opts = %{
-      can_use_tool: opts.can_use_tool,
-      mcp_tool_index: mcp_tool_index
-    }
-
-    control_handlers = ControlRouter.build_handlers(handler_opts)
+    control_handlers = Internal.build_control_handlers(opts)
 
     {:ok, pid} =
       case Subprocess.start(caller: self(), options: opts) do
@@ -144,27 +136,23 @@ defmodule ClaudeSDK do
           raise ClaudeSDK.TransportError, reason: reason
       end
 
-    # Send initialize control request
-    init_request = %{
-      type: "control_request",
-      request_id: generate_request_id(),
-      request:
-        %{
-          subtype: "initialize",
-          hooks: opts.hooks,
-          agents: normalize_agents(opts.agents)
-        }
-        |> maybe_put_plugins(opts.plugins)
-    }
-
-    Subprocess.send_message(pid, init_request)
+    Subprocess.send_message(pid, Internal.build_init_request(opts))
 
     init_timeout = opts.init_timeout_ms || @default_init_timeout
 
-    # Wait for control_response acknowledging initialization.
-    # Skip any non-control_response messages (e.g. system messages) that
-    # the CLI may send before the handshake completes.
-    wait_for_init_response(pid, init_timeout)
+    case Internal.wait_for_init_response(init_timeout) do
+      :ok ->
+        :ok
+
+      {:error, {:cli_exited, reason}} ->
+        raise ClaudeSDK.TransportError,
+          reason: reason,
+          message: "CLI exited during initialization: #{inspect(reason)}"
+
+      {:error, :init_timeout} ->
+        Internal.safe_stop_subprocess(pid)
+        raise ClaudeSDK.TimeoutError, timeout_ms: init_timeout
+    end
 
     # Send the user prompt
     user_message = %{
@@ -241,64 +229,8 @@ defmodule ClaudeSDK do
   defp cleanup(:done), do: :ok
 
   defp cleanup(%{subprocess: pid}) do
-    if Process.alive?(pid) do
-      Subprocess.stop(pid)
-    end
+    Internal.safe_stop_subprocess(pid)
   end
 
   defp cleanup(_), do: :ok
-
-  defp wait_for_init_response(pid, timeout) do
-    deadline = System.monotonic_time(:millisecond) + timeout
-
-    wait_for_init_loop(pid, deadline, timeout)
-  end
-
-  defp wait_for_init_loop(pid, deadline, original_timeout) do
-    remaining = max(deadline - System.monotonic_time(:millisecond), 0)
-
-    receive do
-      {:claude_message, %{"type" => "control_response"}} ->
-        :ok
-
-      {:claude_message, %{"type" => _}} ->
-        # Skip non-control_response messages (system, etc.)
-        wait_for_init_loop(pid, deadline, original_timeout)
-
-      {:claude_exit, reason} ->
-        raise ClaudeSDK.TransportError,
-          reason: reason,
-          message: "CLI exited during initialization: #{inspect(reason)}"
-    after
-      remaining ->
-        Subprocess.stop(pid)
-        raise ClaudeSDK.TimeoutError, timeout_ms: original_timeout
-    end
-  end
-
-  defp normalize_agents(agents) when is_list(agents) do
-    Enum.map(agents, fn
-      %ClaudeSDK.Types.AgentDefinition{} = agent ->
-        ClaudeSDK.Types.AgentDefinition.to_map(agent)
-
-      agent when is_map(agent) ->
-        agent
-    end)
-  end
-
-  defp normalize_agents(agents) when is_map(agents), do: agents
-  defp normalize_agents(_), do: %{}
-
-  defp maybe_put_plugins(request, nil), do: request
-  defp maybe_put_plugins(request, []), do: request
-
-  defp maybe_put_plugins(request, plugins) when is_list(plugins),
-    do: Map.put(request, :plugins, plugins)
-
-  defp build_mcp_tool_index([]), do: %{}
-  defp build_mcp_tool_index(nil), do: %{}
-
-  defp build_mcp_tool_index(servers) when is_list(servers) do
-    ClaudeSDK.MCP.Server.build_tool_index(servers)
-  end
 end

@@ -150,7 +150,11 @@ defmodule ClaudeSDK.Transport.SubprocessCoverageTest do
       assert_receive {:claude_message, %{"type" => "result"}}, 5000
 
       # Process may have already exited after sending result
-      if Process.alive?(pid), do: Subprocess.stop(pid)
+      try do
+        if Process.alive?(pid), do: Subprocess.stop(pid)
+      catch
+        :exit, _ -> :ok
+      end
     end
   end
 

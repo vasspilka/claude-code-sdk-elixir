@@ -39,6 +39,13 @@ defmodule ClaudeSDK.Client do
 
       ClaudeSDK.Client.close(client)
 
+  ## Concurrency
+
+  The Client does not support concurrent queries. Each Client instance processes
+  one query at a time. Calling `query/2` while another query is streaming will
+  return `{:error, {:invalid_state, :streaming}}`. For parallel workloads, use
+  separate Client instances.
+
   ## State Machine
 
   The client transitions through these states:
@@ -53,6 +60,7 @@ defmodule ClaudeSDK.Client do
   use GenServer
 
   alias ClaudeSDK.ControlRouter
+  alias ClaudeSDK.Internal
   alias ClaudeSDK.Transport.Subprocess
   alias ClaudeSDK.Types.Options
 
@@ -141,6 +149,9 @@ defmodule ClaudeSDK.Client do
   Change the model mid-session.
 
   Can only be called when the client is in `:connected` state (not streaming).
+
+  Note: This is fire-and-forget — the request is sent but no acknowledgment
+  is awaited. If the CLI rejects the model change, no error is returned.
   """
   @spec set_model(GenServer.server(), String.t()) :: :ok | {:error, term()}
   def set_model(client, model) when is_binary(model) do
@@ -151,6 +162,9 @@ defmodule ClaudeSDK.Client do
   Change the permission mode mid-session.
 
   Can only be called when the client is in `:connected` state (not streaming).
+
+  Note: This is fire-and-forget — the request is sent but no acknowledgment
+  is awaited. If the CLI rejects the mode change, no error is returned.
   """
   @spec set_permission_mode(GenServer.server(), atom()) :: :ok | {:error, term()}
   def set_permission_mode(client, mode) when is_atom(mode) do
@@ -224,19 +238,25 @@ defmodule ClaudeSDK.Client do
   """
   @spec with_client(keyword(), (GenServer.server() -> result)) :: result when result: var
   def with_client(opts \\ [], fun) when is_function(fun, 1) do
-    {:ok, client} = start_link(opts)
+    case start_link(opts) do
+      {:ok, client} ->
+        try do
+          case connect(client) do
+            :ok -> fun.(client)
+            {:error, reason} -> raise ClaudeSDK.TransportError, reason: reason
+          end
+        after
+          try do
+            close(client)
+          catch
+            :exit, _ -> :ok
+          end
+        end
 
-    try do
-      case connect(client) do
-        :ok -> fun.(client)
-        {:error, reason} -> raise ClaudeSDK.TransportError, reason: reason
-      end
-    after
-      try do
-        close(client)
-      catch
-        :exit, _ -> :ok
-      end
+      {:error, reason} ->
+        raise ClaudeSDK.TransportError,
+          reason: reason,
+          message: "Failed to start client: #{inspect(reason)}"
     end
   end
 
@@ -301,7 +321,7 @@ defmodule ClaudeSDK.Client do
   end
 
   def handle_call({:rewind_files, user_message_id}, from, %{state: :connected} = state) do
-    request_id = ClaudeSDK.generate_request_id()
+    request_id = Internal.generate_request_id()
 
     rewind_request = %{
       type: "control_request",
@@ -340,7 +360,7 @@ defmodule ClaudeSDK.Client do
   def handle_call({:set_model, model}, _from, %{state: :connected} = state) do
     control_msg = %{
       type: "control_request",
-      request_id: ClaudeSDK.generate_request_id(),
+      request_id: Internal.generate_request_id(),
       request: %{subtype: "set_model", model: model}
     }
 
@@ -355,7 +375,7 @@ defmodule ClaudeSDK.Client do
   def handle_call({:set_permission_mode, mode}, _from, %{state: :connected} = state) do
     control_msg = %{
       type: "control_request",
-      request_id: ClaudeSDK.generate_request_id(),
+      request_id: Internal.generate_request_id(),
       request: %{subtype: "set_permission_mode", mode: to_string(mode)}
     }
 
@@ -368,7 +388,7 @@ defmodule ClaudeSDK.Client do
   end
 
   def handle_call(:get_mcp_status, from, %{state: :connected} = state) do
-    request_id = ClaudeSDK.generate_request_id()
+    request_id = Internal.generate_request_id()
 
     control_msg = %{
       type: "control_request",
@@ -389,7 +409,7 @@ defmodule ClaudeSDK.Client do
   end
 
   def handle_call(:get_server_info, from, %{state: :connected} = state) do
-    request_id = ClaudeSDK.generate_request_id()
+    request_id = Internal.generate_request_id()
 
     control_msg = %{
       type: "control_request",
@@ -410,7 +430,7 @@ defmodule ClaudeSDK.Client do
   end
 
   def handle_call({:reconnect_mcp_server, server_name}, from, %{state: :connected} = state) do
-    request_id = ClaudeSDK.generate_request_id()
+    request_id = Internal.generate_request_id()
 
     control_msg = %{
       type: "control_request",
@@ -431,7 +451,7 @@ defmodule ClaudeSDK.Client do
   end
 
   def handle_call({:toggle_mcp_server, server_name, enabled}, from, %{state: :connected} = state) do
-    request_id = ClaudeSDK.generate_request_id()
+    request_id = Internal.generate_request_id()
 
     control_msg = %{
       type: "control_request",
@@ -539,7 +559,7 @@ defmodule ClaudeSDK.Client do
     cancel_control_timer(state)
 
     if is_pid(state.subprocess) do
-      safe_stop(state.subprocess)
+      Internal.safe_stop_subprocess(state.subprocess)
     end
 
     :ok
@@ -558,46 +578,21 @@ defmodule ClaudeSDK.Client do
 
   defp do_connect_validated(state) do
     opts = state.options
-
-    mcp_tool_index =
-      case opts.mcp_servers do
-        [] -> %{}
-        nil -> %{}
-        servers -> ClaudeSDK.MCP.Server.build_tool_index(servers)
-      end
-
-    handler_opts = %{
-      can_use_tool: opts.can_use_tool,
-      mcp_tool_index: mcp_tool_index
-    }
-
-    control_handlers = ControlRouter.build_handlers(handler_opts)
+    control_handlers = Internal.build_control_handlers(opts)
 
     case Subprocess.start_link(caller: self(), options: opts) do
       {:ok, pid} ->
-        init_request = %{
-          type: "control_request",
-          request_id: ClaudeSDK.generate_request_id(),
-          request:
-            %{
-              subtype: "initialize",
-              hooks: opts.hooks,
-              agents: normalize_agents(opts.agents)
-            }
-            |> maybe_put_plugins(opts.plugins)
-        }
-
-        Subprocess.send_message(pid, init_request)
+        Subprocess.send_message(pid, Internal.build_init_request(opts))
 
         init_timeout = opts.init_timeout_ms || @default_init_timeout
 
-        case wait_for_init(init_timeout) do
+        case Internal.wait_for_init_response(init_timeout) do
           :ok ->
             {:ok,
              %{state | state: :connected, subprocess: pid, control_handlers: control_handlers}}
 
           {:error, reason} ->
-            safe_stop(pid)
+            Internal.safe_stop_subprocess(pid)
             {:error, reason}
         end
 
@@ -606,29 +601,6 @@ defmodule ClaudeSDK.Client do
 
       {:error, reason} ->
         {:error, reason}
-    end
-  end
-
-  defp wait_for_init(timeout) do
-    deadline = System.monotonic_time(:millisecond) + timeout
-    wait_for_init_loop(deadline)
-  end
-
-  defp wait_for_init_loop(deadline) do
-    remaining = max(deadline - System.monotonic_time(:millisecond), 0)
-
-    receive do
-      {:claude_message, %{"type" => "control_response"}} ->
-        :ok
-
-      {:claude_message, %{"type" => _}} ->
-        # Skip non-control_response messages (system, etc.)
-        wait_for_init_loop(deadline)
-
-      {:claude_exit, reason} ->
-        {:error, {:cli_exited, reason}}
-    after
-      remaining -> {:error, :init_timeout}
     end
   end
 
@@ -695,12 +667,6 @@ defmodule ClaudeSDK.Client do
 
   # Notify the active caller about subprocess exit, handling both
   # pid callers (streaming) and GenServer.reply tuples (awaiting states).
-  defp safe_stop(pid) do
-    if Process.alive?(pid), do: Subprocess.stop(pid)
-  catch
-    :exit, _ -> :ok
-  end
-
   defp notify_caller_of_exit(nil, _state, _reason), do: :ok
 
   defp notify_caller_of_exit(caller, _state, reason) when is_pid(caller) do
@@ -724,23 +690,4 @@ defmodule ClaudeSDK.Client do
 
     :ok
   end
-
-  defp maybe_put_plugins(request, nil), do: request
-  defp maybe_put_plugins(request, []), do: request
-
-  defp maybe_put_plugins(request, plugins) when is_list(plugins),
-    do: Map.put(request, :plugins, plugins)
-
-  defp normalize_agents(agents) when is_list(agents) do
-    Enum.map(agents, fn
-      %ClaudeSDK.Types.AgentDefinition{} = agent ->
-        ClaudeSDK.Types.AgentDefinition.to_map(agent)
-
-      agent when is_map(agent) ->
-        agent
-    end)
-  end
-
-  defp normalize_agents(agents) when is_map(agents), do: agents
-  defp normalize_agents(_), do: %{}
 end

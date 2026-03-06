@@ -19,20 +19,24 @@ An Elixir SDK that wraps the [Claude Code CLI](https://docs.anthropic.com/en/doc
 - [Client Features](#client-features)
 - [Message Types](#message-types)
 - [Permission Callbacks](#permission-callbacks)
-- [Tool Filtering](#tool-filtering)
+- [Tool Configuration](#tool-configuration)
 - [MCP Servers](#mcp-servers)
 - [Structured Output](#structured-output)
+- [Output Format](#output-format)
 - [Session Management](#session-management)
 - [Thinking Configuration](#thinking-configuration)
 - [Effort Levels](#effort-levels)
 - [Partial Messages / StreamEvent](#partial-messages--streamevent)
 - [Environment Variables](#environment-variables)
 - [Agent Definitions](#agent-definitions)
+- [Sandbox](#sandbox)
+- [Hooks](#hooks)
 - [Error Handling](#error-handling)
 - [Supervision Tree](#supervision-tree)
 - [Configuration Reference](#configuration-reference)
 - [Architecture](#architecture)
 - [Testing](#testing)
+- [Troubleshooting](#troubleshooting)
 - [Documentation](#documentation)
 - [License](#license)
 
@@ -97,8 +101,6 @@ ClaudeSDK.query("Hello", max_turns: 1, permission_mode: :bypass_permissions)
 |> Enum.to_list()
 ```
 
-Note: the default `session_id` is `"default"`, meaning all queries share a session unless you explicitly set a different one.
-
 ### Multi-turn client
 
 The `Client` keeps a subprocess alive across multiple queries. Use `with_client/2` for automatic connection and cleanup:
@@ -154,6 +156,8 @@ Client.with_client(
 ```
 
 ## Client Features
+
+> **Note:** The Client does not support concurrent queries. Each Client instance processes one query at a time. For parallel workloads, use separate Client instances.
 
 The multi-turn client supports additional mid-session operations:
 
@@ -240,20 +244,25 @@ end
 
 Return values: `:allow`, `{:allow, updated_input_map}`, `:deny`, or `{:deny, reason}`.
 
-## Tool Filtering
+## Tool Configuration
 
-Control which tools are available without writing a callback:
+By default the CLI uses its built-in tool set. You can customize which tools are available:
 
 ```elixir
 alias ClaudeSDK.Types.Options
 
-# Only allow specific tools
+# Explicitly select the tool set (`:default` or a list of tool names)
+ClaudeSDK.query("Help me code", %Options{tools: ["Read", "Glob", "Grep", "Bash"]})
+
+# Or keep defaults but filter with allow/deny lists
 ClaudeSDK.query("Help me code", %Options{
   allowed_tools: ["Read", "Glob", "Grep"],
   disallowed_tools: ["Bash"]
 })
 |> Enum.each(&IO.inspect/1)
 ```
+
+Use `allowed_tools` to restrict to a specific set, `disallowed_tools` to block specific tools, or `tools` to replace the default tool set entirely.
 
 ## MCP Servers
 
@@ -283,7 +292,7 @@ Tool handlers return `{:ok, result}` or `{:error, reason}`. Results can be strin
 
 ## Structured Output
 
-Get responses as structured JSON matching a schema:
+Get responses as structured JSON matching a schema. The result arrives as a JSON string in `ResultMessage.result`:
 
 ```elixir
 alias ClaudeSDK.Types.{Options, ResultMessage}
@@ -310,10 +319,36 @@ ClaudeSDK.query("List 3 programming languages and their creators", %Options{
 |> then(fn %ResultMessage{result: json_string} -> Jason.decode!(json_string) end)
 ```
 
+## Output Format
+
+`output_format` is a separate option from `json_schema`. While `json_schema` constrains the model's text response, `output_format` controls the CLI's output structure. When set, the parsed result is available in `ResultMessage.structured_output`:
+
+```elixir
+alias ClaudeSDK.Types.{Options, ResultMessage}
+
+ClaudeSDK.query("Summarize this project", %Options{
+  output_format: %{
+    "type" => "object",
+    "properties" => %{
+      "summary" => %{"type" => "string"},
+      "key_files" => %{"type" => "array", "items" => %{"type" => "string"}}
+    }
+  },
+  permission_mode: :bypass_permissions
+})
+|> Enum.find(&match?(%ResultMessage{}, &1))
+|> then(fn %ResultMessage{structured_output: output} -> output end)
+```
+
 ## Session Management
+
+> **Important:** The default `session_id` is `"default"`, meaning all queries share a single session unless you explicitly set a different one. Set `session_id` to isolate unrelated conversations.
 
 ```elixir
 alias ClaudeSDK.Types.Options
+
+# Use a custom session ID to isolate conversations
+ClaudeSDK.query("Hello", %Options{session_id: "my-project-session"})
 
 # Continue the most recent session
 ClaudeSDK.query("Follow up on that", %Options{continue: true})
@@ -323,9 +358,6 @@ ClaudeSDK.query("Follow up", %Options{resume: "session_abc123"})
 
 # Fork a session (branch off without modifying the original)
 ClaudeSDK.query("Try a different approach", %Options{fork_session: true})
-
-# Use a custom session ID (default is "default")
-ClaudeSDK.query("Hello", %Options{session_id: "my-project-session"})
 ```
 
 ## Thinking Configuration
@@ -367,10 +399,21 @@ alias ClaudeSDK.Types.{Options, StreamEvent}
 
 ClaudeSDK.query("Tell me a story", %Options{include_partial_messages: true})
 |> Enum.each(fn
-  %StreamEvent{} = event -> IO.write(inspect(event))
-  _other -> :ok
+  %StreamEvent{event: %{"type" => "content_block_delta", "delta" => %{"text" => text}}} ->
+    IO.write(text)
+
+  %StreamEvent{event: %{"type" => "content_block_start"}} ->
+    :ok  # new block started
+
+  %StreamEvent{event: %{"type" => "content_block_stop"}} ->
+    IO.puts("")  # block finished
+
+  _other ->
+    :ok
 end)
 ```
+
+The `event` map follows the Claude API streaming format. Common event types include `"content_block_start"`, `"content_block_delta"`, and `"content_block_stop"`.
 
 ## Environment Variables
 
@@ -404,6 +447,55 @@ agents = [
 ClaudeSDK.query("Research how auth works in this codebase", %Options{agents: agents})
 |> Enum.each(&IO.inspect/1)
 ```
+
+## Sandbox
+
+Run the CLI in a sandboxed environment to restrict filesystem and network access:
+
+```elixir
+alias ClaudeSDK.Types.{Options, SandboxSettings}
+
+ClaudeSDK.query("Analyze this code", %Options{
+  sandbox: %SandboxSettings{
+    enabled: true,
+    auto_allow_bash_if_sandboxed: true,
+    network: "deny",
+    excluded_commands: ["git"]
+  },
+  permission_mode: :bypass_permissions
+})
+|> Enum.each(&IO.inspect/1)
+```
+
+You can also pass a raw map: `sandbox: %{enabled: true, network: "deny"}`.
+
+## Hooks
+
+Hooks are shell commands that run in response to CLI lifecycle events (e.g., before/after tool calls, on notifications). They are passed via the `hooks` option and sent during initialization:
+
+```elixir
+alias ClaudeSDK.Types.Options
+
+ClaudeSDK.query("Make changes to the code", %Options{
+  hooks: %{
+    "PreToolUse" => [
+      %{
+        "matcher" => "Bash",
+        "hooks" => [%{"type" => "command", "command" => "echo 'About to run bash'"}]
+      }
+    ],
+    "PostToolUse" => [
+      %{
+        "matcher" => "Write",
+        "hooks" => [%{"type" => "command", "command" => "mix format"}]
+      }
+    ]
+  }
+})
+|> Enum.each(&IO.inspect/1)
+```
+
+See the [Claude Code hooks documentation](https://docs.anthropic.com/en/docs/claude-code/hooks) for the full hook specification.
 
 ## Error Handling
 
@@ -448,34 +540,71 @@ After starting under a supervisor, call `Client.connect/1` to initiate the subpr
 
 ## Configuration Reference
 
-Key options are listed below. See `ClaudeSDK.Types.Options` for the complete list of configuration options.
+All options available in `ClaudeSDK.Types.Options`:
 
 | Option | Description |
 |--------|-------------|
-| `model` | Model identifier (e.g. `"claude-sonnet-4-6"`) |
+| **Prompt** | |
 | `system_prompt` | Override the default system prompt |
 | `append_system_prompt` | Append to the default system prompt |
-| `max_turns` | Maximum agentic turns |
-| `max_budget_usd` | Spend limit in USD |
-| `permission_mode` | `:default`, `:accept_edits`, `:plan`, or `:bypass_permissions` |
-| `can_use_tool` | Permission callback function |
+| **Model** | |
+| `model` | Model identifier (e.g. `"claude-sonnet-4-6"`) |
+| `fallback_model` | Fallback model if the primary is unavailable |
+| **Tools** | |
+| `tools` | Tool set: `:default` or a list of tool name strings |
 | `allowed_tools` | Allowlist of tool names |
 | `disallowed_tools` | Denylist of tool names |
-| `effort` | Effort level: `"low"`, `"medium"`, `"high"`, `"max"` |
-| `mcp_servers` | In-process MCP server configs |
-| `json_schema` | JSON Schema for structured output |
-| `thinking` | Extended thinking configuration |
+| `can_use_tool` | Permission callback function (arity-2 or arity-3) |
+| `permission_prompt_tool_name` | Custom name for the permission prompt tool (default: `"stdio"`) |
+| **Limits** | |
+| `max_turns` | Maximum agentic turns |
+| `max_budget_usd` | Spend limit in USD |
+| `max_thinking_tokens` | Maximum tokens for extended thinking |
+| **Permissions** | |
+| `permission_mode` | `:default`, `:accept_edits`, `:plan`, or `:bypass_permissions` |
+| **Session** | |
 | `session_id` | Session identifier (default: `"default"`) |
 | `continue` | Continue the most recent session |
 | `resume` | Resume a specific session by ID |
-| `env` | Extra environment variables for the subprocess |
-| `cwd` | Working directory for the subprocess |
-| `sandbox` | Sandbox configuration |
-| `agents` | Custom subagent definitions |
+| `fork_session` | Fork the current session (branch off) |
+| **Streaming** | |
 | `include_partial_messages` | Enable `StreamEvent` partial deltas |
-| `enable_file_checkpointing` | Enable file rewind support |
+| **Thinking** | |
+| `thinking` | Extended thinking config (`ThinkingConfig` or map) |
+| `effort` | Effort level: `"low"`, `"medium"`, `"high"`, `"max"` |
+| **Structured Output** | |
+| `json_schema` | JSON Schema for constraining the model's text response |
+| `output_format` | JSON Schema for CLI-level structured output (populates `structured_output`) |
+| **MCP** | |
+| `mcp_servers` | In-process MCP server configs (via `create_mcp_server/3`) |
+| `mcp_config` | Path to external MCP config file, or a config map |
+| **Sandbox** | |
+| `sandbox` | `%SandboxSettings{}` or raw map for sandbox configuration |
+| **File Checkpointing** | |
+| `enable_file_checkpointing` | Enable file rewind support (Client only) |
+| **Agents** | |
+| `agents` | Custom subagent definitions (`[%AgentDefinition{}]` or raw map) |
+| **Working Directory** | |
+| `cwd` | Working directory for the subprocess |
+| `add_dirs` | Additional directories to make available to the CLI |
+| **Environment** | |
+| `env` | Extra environment variables for the subprocess |
+| **Hooks & Plugins** | |
+| `hooks` | Lifecycle hook commands (map keyed by event name) |
+| `plugins` | List of plugin configuration maps |
+| `plugin_dirs` | List of plugin directory paths |
+| **Settings** | |
+| `settings` | Map of CLI settings to override |
+| `setting_sources` | List of setting source paths |
+| **Beta & Identity** | |
+| `betas` | List of beta feature flag strings |
+| `user` | User identifier string |
+| **Timeouts** | |
 | `init_timeout_ms` | Initialization timeout (default: 30s) |
 | `message_timeout_ms` | Message receive timeout (default: 120s) |
+| **Advanced** | |
+| `cli_path` | Override the auto-discovered CLI binary path |
+| `extra_args` | Escape hatch: additional raw CLI argument strings |
 
 ## Architecture
 
@@ -507,6 +636,46 @@ mix test --include live          # Include integration tests (requires real CLI)
 ```
 
 Live tests (tagged `@tag :live`) hit the real Claude CLI and are excluded by default. To add your own mock-based tests, create a shell script that writes NDJSON to stdout and point the `:cli_path` option at it.
+
+## Troubleshooting
+
+### CLI not found
+
+If you get `CLINotFoundError`, the Claude CLI is not installed or not on your PATH:
+
+```bash
+npm install -g @anthropic-ai/claude-code
+```
+
+You can also point to a specific binary with `%Options{cli_path: "/path/to/claude"}`.
+
+### Timeouts
+
+The SDK enforces two timeouts:
+
+- **Initialization** (default 30s) — the CLI must complete its handshake within this window. Increase with `init_timeout_ms`.
+- **Message inactivity** (default 120s) — if no message arrives within this window during streaming, the query ends with a timeout result. Increase with `message_timeout_ms` for long-running operations.
+
+```elixir
+ClaudeSDK.query("Complex task", %Options{
+  init_timeout_ms: 60_000,
+  message_timeout_ms: 300_000
+})
+```
+
+### No CLI logs / stderr
+
+Erlang ports only capture stdout. CLI stderr output (logs, warnings) is not captured by the SDK. To capture CLI logs, redirect them to a file:
+
+```elixir
+ClaudeSDK.query("Hello", %Options{
+  extra_args: ["--log-file", "/tmp/claude.log"]
+})
+```
+
+### Concurrent queries on Client
+
+`ClaudeSDK.Client` does not support concurrent queries — calling `query/2` while another is streaming will return `{:error, {:invalid_state, :streaming}}`. Use separate Client instances for parallel workloads.
 
 ## Documentation
 

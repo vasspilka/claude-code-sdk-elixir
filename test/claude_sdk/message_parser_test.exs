@@ -141,9 +141,10 @@ defmodule ClaudeSDK.MessageParserTest do
     end
   end
 
-  describe "parse/1 — errors" do
-    test "returns error for unknown type" do
-      assert {:error, {:unknown_type, "alien"}} = MessageParser.parse(%{"type" => "alien"})
+  describe "parse/1 — unknown and missing types" do
+    test "returns raw map for unknown type (forward compatibility)" do
+      raw = %{"type" => "alien", "data" => "hello"}
+      assert {:ok, ^raw} = MessageParser.parse(raw)
     end
 
     test "returns error for missing type" do

@@ -7,10 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.0] - Unreleased
 
+### Added
+
+- `output_format` option for CLI-level structured output (populates `ResultMessage.structured_output`)
+- `hooks` option for lifecycle hook commands (before/after tool calls, notifications)
+- `sandbox` option with `SandboxSettings` for restricted filesystem/network access
+- `allowed_tools` / `disallowed_tools` options for tool filtering (replaces `tool_filter`)
+- Hook callback support in `ControlRouter` (arity-1 and arity-2 callbacks, lists of callbacks)
+- `ClaudeSDK.Internal` module extracting shared initialization logic from `ClaudeSDK` and `Client`
+- Troubleshooting section in README
+
 ### Improved
 
 - Expanded test coverage across core modules
-- Updated and improved documentation
+- Comprehensive README rewrite with new sections for output format, sandbox, hooks, and full configuration reference
+- Simplified `ClaudeSDK` and `Client` by extracting common logic into `Internal`
+- `CommandBuilder` now supports `output_format` flag
+- `Options` validation for `can_use_tool` callback arity
 
 ## [0.1.0] - 2025-06-01
 

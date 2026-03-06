@@ -239,20 +239,31 @@ defmodule ClaudeSDK.Transport.CommandBuilderTest do
       assert {:ok, ^thinking} = Jason.decode(Enum.at(args, idx + 1))
     end
 
-    test "output_format does not add a second --output-format (would break stream-json protocol)" do
-      output_format = %{"type" => "json", "schema" => %{"key" => "value"}}
+    test "output_format with json_schema type extracts schema into --json-schema" do
+      output_format = %{"type" => "json_schema", "schema" => %{"key" => "value"}}
       args = CommandBuilder.build_args(%Options{output_format: output_format})
 
-      indices =
+      # Should not add a second --output-format (would break stream-json protocol)
+      output_format_indices =
         args
         |> Enum.with_index()
         |> Enum.filter(fn {val, _} -> val == "--output-format" end)
         |> Enum.map(fn {_, idx} -> idx end)
 
-      # Only the base "stream-json" should be present
-      assert length(indices) == 1
-      [idx] = indices
-      assert Enum.at(args, idx + 1) == "stream-json"
+      assert length(output_format_indices) == 1
+
+      # Should add the schema as --json-schema
+      json_schema_idx = Enum.find_index(args, &(&1 == "--json-schema"))
+      assert json_schema_idx != nil
+      assert {:ok, %{"key" => "value"}} = Jason.decode(Enum.at(args, json_schema_idx + 1))
+    end
+
+    test "output_format without json_schema type is ignored" do
+      output_format = %{"type" => "json", "schema" => %{"key" => "value"}}
+      args = CommandBuilder.build_args(%Options{output_format: output_format})
+
+      json_schema_idx = Enum.find_index(args, &(&1 == "--json-schema"))
+      assert json_schema_idx == nil
     end
 
     test "adds --sandbox as encoded JSON" do

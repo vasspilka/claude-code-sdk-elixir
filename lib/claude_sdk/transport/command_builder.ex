@@ -50,6 +50,7 @@ defmodule ClaudeSDK.Transport.CommandBuilder do
     |> add_json_opt("--settings", opts.settings)
     |> maybe_add_list("--setting-sources", opts.setting_sources)
     |> add_json_opt("--sandbox", opts.sandbox)
+    |> add_output_format(opts.output_format)
     |> add_repeated("--beta", opts.betas || [])
     |> maybe_add("--user", opts.user)
     |> add_mcp_config(opts.mcp_config)
@@ -66,7 +67,7 @@ defmodule ClaudeSDK.Transport.CommandBuilder do
   def build_env(%Options{} = opts) do
     base = [
       {"CLAUDE_CODE_ENTRYPOINT", "sdk-elixir"},
-      {"CLAUDE_AGENT_SDK_VERSION", "0.1.0"}
+      {"CLAUDE_AGENT_SDK_VERSION", ClaudeSDK.Internal.sdk_version()}
     ]
 
     base
@@ -131,6 +132,15 @@ defmodule ClaudeSDK.Transport.CommandBuilder do
     do: args ++ [flag, Jason.encode!(ClaudeSDK.Types.SandboxSettings.to_map(settings))]
 
   defp add_json_opt(args, flag, map) when is_map(map), do: args ++ [flag, Jason.encode!(map)]
+
+  defp add_output_format(args, nil), do: args
+
+  defp add_output_format(args, %{"type" => "json_schema", "schema" => schema})
+       when is_map(schema) do
+    args ++ ["--json-schema", Jason.encode!(schema)]
+  end
+
+  defp add_output_format(args, _), do: args
 
   defp add_mcp_config(args, nil), do: args
   defp add_mcp_config(args, config) when is_binary(config), do: args ++ ["--mcp-config", config]

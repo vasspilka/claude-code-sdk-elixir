@@ -18,14 +18,15 @@ defmodule ClaudeSDK.ControlRouter do
   @doc """
   Build handler registry from Options fields.
 
-  Inspects `can_use_tool` and `mcp_servers` to register the appropriate
-  control_request handlers.
+  Inspects `can_use_tool`, `mcp_servers`, and `hooks` to register the
+  appropriate control_request handlers.
   """
   @spec build_handlers(map()) :: handler_registry()
   def build_handlers(opts) do
     %{}
     |> maybe_add_permission_handler(opts)
     |> maybe_add_mcp_handler(opts)
+    |> maybe_add_hook_handler(opts)
   end
 
   @doc """
@@ -168,6 +169,79 @@ defmodule ClaudeSDK.ControlRouter do
   end
 
   defp maybe_add_mcp_handler(handlers, _opts), do: handlers
+
+  defp maybe_add_hook_handler(handlers, %{hooks: hooks})
+       when is_map(hooks) and map_size(hooks) > 0 do
+    handler = fn request ->
+      hook_event = request["hook_event"] || ""
+      hook_input = request["hook_input"] || %{}
+
+      case Map.get(hooks, hook_event) do
+        nil ->
+          {:result, %{}}
+
+        hook_callbacks when is_list(hook_callbacks) ->
+          run_hook_callbacks(hook_callbacks, hook_event, hook_input)
+
+        hook_callback when is_function(hook_callback, 1) ->
+          run_single_hook_callback(hook_callback, hook_event, hook_input)
+
+        hook_callback when is_function(hook_callback, 2) ->
+          run_single_hook_callback_2(hook_callback, hook_event, hook_input)
+
+        _ ->
+          {:result, %{}}
+      end
+    end
+
+    Map.put(handlers, "hook_callback", handler)
+  end
+
+  defp maybe_add_hook_handler(handlers, _opts), do: handlers
+
+  defp run_hook_callbacks(callbacks, hook_event, hook_input) do
+    Enum.reduce_while(callbacks, {:result, %{}}, fn callback, _acc ->
+      result =
+        cond do
+          is_function(callback, 1) ->
+            run_single_hook_callback(callback, hook_event, hook_input)
+
+          is_function(callback, 2) ->
+            run_single_hook_callback_2(callback, hook_event, hook_input)
+
+          true ->
+            {:result, %{}}
+        end
+
+      {:cont, result}
+    end)
+  end
+
+  defp run_single_hook_callback(callback, _hook_event, hook_input) do
+    case callback.(hook_input) do
+      :ok -> {:result, %{}}
+      {:ok, result} when is_map(result) -> {:result, result}
+      {:result, result} when is_map(result) -> {:result, result}
+      _ -> {:result, %{}}
+    end
+  rescue
+    e ->
+      Logger.warning("Hook callback raised: #{Exception.message(e)}")
+      {:result, %{}}
+  end
+
+  defp run_single_hook_callback_2(callback, hook_event, hook_input) do
+    case callback.(hook_event, hook_input) do
+      :ok -> {:result, %{}}
+      {:ok, result} when is_map(result) -> {:result, result}
+      {:result, result} when is_map(result) -> {:result, result}
+      _ -> {:result, %{}}
+    end
+  rescue
+    e ->
+      Logger.warning("Hook callback raised: #{Exception.message(e)}")
+      {:result, %{}}
+  end
 
   defp build_error_response(request_id, message) do
     %{

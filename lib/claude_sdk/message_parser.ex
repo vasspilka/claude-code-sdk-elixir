@@ -55,7 +55,7 @@ defmodule ClaudeSDK.MessageParser do
   def parse(%{"type" => "task_started"} = raw), do: {:ok, parse_task_started(raw)}
   def parse(%{"type" => "task_progress"} = raw), do: {:ok, parse_task_progress(raw)}
   def parse(%{"type" => "task_notification"} = raw), do: {:ok, parse_task_notification(raw)}
-  def parse(%{"type" => type}), do: {:error, {:unknown_type, type}}
+  def parse(%{"type" => _type} = raw), do: {:ok, raw}
   def parse(_), do: {:error, :missing_type}
 
   @doc "Parse or raise on failure."
