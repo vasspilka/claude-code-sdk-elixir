@@ -4,19 +4,32 @@ defmodule ClaudeSDK.Transport.CommandBuilderCoverageTest do
   alias ClaudeSDK.Transport.CommandBuilder
   alias ClaudeSDK.Types.Options
 
-  describe "permission_prompt_tool with custom name" do
-    test "uses custom permission_prompt_tool_name" do
+  describe "permission_prompt_tool" do
+    test "can_use_tool auto-configures --permission-prompt-tool stdio" do
       callback = fn _tool, _input -> :allow end
 
+      args = CommandBuilder.build_args(%Options{can_use_tool: callback})
+
+      idx = Enum.find_index(args, &(&1 == "--permission-prompt-tool"))
+      assert idx != nil
+      assert Enum.at(args, idx + 1) == "stdio"
+    end
+
+    test "permission_prompt_tool_name alone sets custom tool name" do
       args =
         CommandBuilder.build_args(%Options{
-          can_use_tool: callback,
           permission_prompt_tool_name: "my-custom-tool"
         })
 
       idx = Enum.find_index(args, &(&1 == "--permission-prompt-tool"))
       assert idx != nil
       assert Enum.at(args, idx + 1) == "my-custom-tool"
+    end
+
+    test "neither set produces no --permission-prompt-tool flag" do
+      args = CommandBuilder.build_args(%Options{})
+
+      refute Enum.member?(args, "--permission-prompt-tool")
     end
   end
 

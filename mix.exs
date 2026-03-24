@@ -39,7 +39,13 @@ defmodule ClaudeSDK.MixProject do
       ],
       groups_for_modules: [
         Core: [ClaudeSDK, ClaudeSDK.Client, ClaudeSDK.Sessions],
-        MCP: [ClaudeSDK.MCP.Server, ClaudeSDK.MCP.Tool],
+        MCP: [
+          ClaudeSDK.MCP.Server,
+          ClaudeSDK.MCP.Tool,
+          ClaudeSDK.MCP.StdioServerConfig,
+          ClaudeSDK.MCP.SSEServerConfig,
+          ClaudeSDK.MCP.HttpServerConfig
+        ],
         "Message Types": [
           ClaudeSDK.Types.AssistantMessage,
           ClaudeSDK.Types.UserMessage,

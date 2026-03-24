@@ -77,13 +77,20 @@ defmodule ClaudeSDK.Transport.CommandBuilder do
 
   # Private helpers
 
-  defp add_permission_prompt_tool(args, nil, _name), do: args
-
-  defp add_permission_prompt_tool(args, callback, name)
+  # When can_use_tool is set, auto-configure --permission-prompt-tool stdio
+  # (validation prevents both can_use_tool and permission_prompt_tool_name from being set)
+  defp add_permission_prompt_tool(args, callback, _name)
        when is_function(callback, 2) or is_function(callback, 3) do
-    tool_name = name || "stdio"
-    args ++ ["--permission-prompt-tool", tool_name]
+    args ++ ["--permission-prompt-tool", "stdio"]
   end
+
+  # When permission_prompt_tool_name is set alone (without can_use_tool),
+  # it tells the CLI to use a named tool for permission prompting
+  defp add_permission_prompt_tool(args, nil, name) when is_binary(name) do
+    args ++ ["--permission-prompt-tool", name]
+  end
+
+  defp add_permission_prompt_tool(args, _callback, _name), do: args
 
   defp add_sdk_mcp_servers(args, []), do: args
   defp add_sdk_mcp_servers(args, nil), do: args

@@ -75,6 +75,29 @@ defmodule ClaudeSDK.Sessions do
   end
 
   @doc """
+  Get info for a single session by ID.
+
+  Returns a session info map or `nil` if the session is not found.
+
+  ## Options
+
+  - `directory` — project directory to search in (default: current directory)
+  """
+  @spec get_session_info(String.t(), keyword()) :: session_info() | nil
+  def get_session_info(session_id, opts \\ []) do
+    with :ok <- validate_session_id(session_id) do
+      directory = Keyword.get(opts, :directory, File.cwd!())
+
+      case find_session_file(session_id, directory) do
+        nil -> nil
+        path -> read_session_info(session_id, path)
+      end
+    else
+      {:error, :invalid_session_id} -> nil
+    end
+  end
+
+  @doc """
   Get the conversation messages for a session.
 
   Reads the full JSONL transcript and returns user/assistant messages

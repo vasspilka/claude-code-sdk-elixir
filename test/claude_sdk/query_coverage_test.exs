@@ -157,7 +157,7 @@ defmodule ClaudeSDK.QueryCoverageTest do
             name: "test-agent",
             description: "A test agent",
             prompt: "You are a test agent",
-            model: "test-model"
+            model: "haiku"
           }
         ]
       }

@@ -76,12 +76,14 @@ defmodule ClaudeSDK.Transport.Subprocess do
         {:stop, e}
 
       cli_path ->
-        check_cli_version(cli_path)
         do_init(cli_path, caller, options)
     end
   end
 
   defp do_init(cli_path, caller, options) do
+    # Fire-and-forget version check — don't block subprocess startup
+    Task.start(fn -> check_cli_version(cli_path) end)
+
     args = CommandBuilder.build_args(options)
     env = CommandBuilder.build_env(options)
 
@@ -124,25 +126,14 @@ defmodule ClaudeSDK.Transport.Subprocess do
   end
 
   @minimum_cli_version "2.0.0"
-  @version_check_timeout_ms 2_000
 
   defp check_cli_version(cli_path) do
-    # Run version check asynchronously to avoid blocking subprocess init.
-    # Uses a short timeout so slow/unresponsive CLIs don't delay startup.
-    task =
-      Task.async(fn ->
-        CLIDiscovery.version(cli_path)
-      end)
-
-    case Task.yield(task, @version_check_timeout_ms) || Task.shutdown(task) do
-      {:ok, {:ok, version_string}} ->
-        compare_version(version_string)
-
-      _ ->
-        Logger.debug("Could not determine Claude CLI version")
+    case CLIDiscovery.version(cli_path) do
+      {:ok, version_string} -> compare_version(version_string)
+      _ -> Logger.debug("Could not determine Claude CLI version")
     end
   rescue
-    _ -> Logger.debug("Could not parse Claude CLI version")
+    _ -> Logger.debug("Could not determine Claude CLI version")
   end
 
   defp compare_version(version_string) do

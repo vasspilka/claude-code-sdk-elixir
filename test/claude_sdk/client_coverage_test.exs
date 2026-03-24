@@ -313,7 +313,7 @@ defmodule ClaudeSDK.ClientCoverageTest do
             name: "test-agent",
             description: "Test",
             prompt: "You are a test agent",
-            model: "test"
+            model: "haiku"
           }
         ]
       }

@@ -21,7 +21,13 @@ defmodule ClaudeSDK.Internal do
   def normalize_agents(agents) when is_list(agents) do
     Enum.map(agents, fn
       %ClaudeSDK.Types.AgentDefinition{} = agent ->
-        ClaudeSDK.Types.AgentDefinition.to_map(agent)
+        case ClaudeSDK.Types.AgentDefinition.validate(agent) do
+          :ok ->
+            ClaudeSDK.Types.AgentDefinition.to_map(agent)
+
+          {:error, reason} ->
+            raise ArgumentError, "invalid agent definition #{inspect(agent.name)}: #{reason}"
+        end
 
       agent when is_map(agent) ->
         agent
@@ -79,13 +85,14 @@ defmodule ClaudeSDK.Internal do
   end
 
   @doc false
-  @spec wait_for_init_response(pos_integer()) :: {:ok, map()} | {:error, term()}
+  @spec wait_for_init_response(pos_integer()) ::
+          {:ok, map(), [map()]} | {:error, term()}
   def wait_for_init_response(timeout) do
     deadline = System.monotonic_time(:millisecond) + timeout
-    wait_for_init_loop(deadline)
+    wait_for_init_loop(deadline, [])
   end
 
-  defp wait_for_init_loop(deadline) do
+  defp wait_for_init_loop(deadline, buffered) do
     remaining = max(deadline - System.monotonic_time(:millisecond), 0)
 
     receive do
@@ -93,13 +100,13 @@ defmodule ClaudeSDK.Internal do
         {:error, {:init_failed, error}}
 
       {:claude_message, %{"type" => "control_response", "response" => response}} ->
-        {:ok, response || %{}}
+        {:ok, response || %{}, Enum.reverse(buffered)}
 
       {:claude_message, %{"type" => "control_response"}} ->
-        {:ok, %{}}
+        {:ok, %{}, Enum.reverse(buffered)}
 
-      {:claude_message, %{"type" => _}} ->
-        wait_for_init_loop(deadline)
+      {:claude_message, %{"type" => _} = msg} ->
+        wait_for_init_loop(deadline, [msg | buffered])
 
       {:claude_exit, reason} ->
         {:error, {:cli_exited, reason}}

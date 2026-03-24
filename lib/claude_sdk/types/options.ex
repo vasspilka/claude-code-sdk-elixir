@@ -370,7 +370,8 @@ defmodule ClaudeSDK.Types.Options do
        when is_function(callback) and is_binary(name),
        do:
          {:error,
-          "cannot set both can_use_tool and permission_prompt_tool_name — use one or the other"}
+          "cannot set both can_use_tool and permission_prompt_tool_name — " <>
+            "when can_use_tool is set, the SDK auto-configures permission_prompt_tool_name to \"stdio\""}
 
   defp validate_permission_options(_), do: :ok
 end

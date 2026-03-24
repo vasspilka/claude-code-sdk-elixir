@@ -66,13 +66,7 @@ defmodule ClaudeSDK.Client do
 
   require Logger
 
-  # 30s is generous for CLI startup + initialize handshake
   @default_init_timeout 30_000
-  # 120s allows for extended thinking and large responses;
-  # override via Options.message_timeout_ms for longer operations
-  @default_message_timeout 120_000
-  # 30s for control request/response round-trips (rewind, MCP status, etc.)
-  @default_control_timeout 30_000
 
   defstruct [
     :options,
@@ -355,7 +349,7 @@ defmodule ClaudeSDK.Client do
     Subprocess.send_message(state.subprocess, user_message)
 
     new_gen = state.query_gen + 1
-    message_timeout = state.options.message_timeout_ms || @default_message_timeout
+    message_timeout = state.options.message_timeout_ms
     monitor = if is_pid(caller), do: Process.monitor(caller)
 
     {:reply, {:ok, message_timeout, new_gen},
@@ -661,10 +655,10 @@ defmodule ClaudeSDK.Client do
       {:ok, pid} ->
         Subprocess.send_message(pid, Internal.build_init_request(opts))
 
-        init_timeout = opts.init_timeout_ms || @default_init_timeout
+        init_timeout = opts.init_timeout_ms
 
         case Internal.wait_for_init_response(init_timeout) do
-          {:ok, server_info} ->
+          {:ok, server_info, _buffered_messages} ->
             {:ok,
              %{
                state
@@ -712,9 +706,6 @@ defmodule ClaudeSDK.Client do
 
       {:client_exit, ^gen, _reason} ->
         {:halt, :done}
-
-      {:client_exit, _reason} ->
-        {:halt, :done}
     after
       message_timeout ->
         {:halt, :timeout}
@@ -737,7 +728,7 @@ defmodule ClaudeSDK.Client do
   defp state_error(other), do: {:invalid_state, other}
 
   defp control_timeout(%{options: opts}) do
-    opts.control_timeout_ms || @default_control_timeout
+    opts.control_timeout_ms
   end
 
   defp maybe_forward_to_caller(raw, %{active_caller: caller, query_gen: gen})

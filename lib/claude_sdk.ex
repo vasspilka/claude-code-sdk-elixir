@@ -62,12 +62,6 @@ defmodule ClaudeSDK do
   alias ClaudeSDK.Transport.Subprocess
   alias ClaudeSDK.Types.Options
 
-  # 30s is generous for CLI startup + initialize handshake
-  @default_init_timeout 30_000
-  # 120s allows for extended thinking and large responses;
-  # override via Options.message_timeout_ms for longer operations
-  @default_message_timeout 120_000
-
   @doc """
   Send a prompt to the Claude CLI and return a stream of typed messages.
 
@@ -132,6 +126,12 @@ defmodule ClaudeSDK do
   defdelegate list_sessions(opts \\ []), to: ClaudeSDK.Sessions
 
   @doc """
+  Get info for a single session. See `ClaudeSDK.Sessions.get_session_info/2`.
+  """
+  @spec get_session_info(String.t(), keyword()) :: ClaudeSDK.Sessions.session_info() | nil
+  defdelegate get_session_info(session_id, opts \\ []), to: ClaudeSDK.Sessions
+
+  @doc """
   Get conversation messages for a session. See `ClaudeSDK.Sessions.get_session_messages/2`.
   """
   @spec get_session_messages(String.t(), keyword()) :: [ClaudeSDK.Sessions.session_message()]
@@ -170,10 +170,12 @@ defmodule ClaudeSDK do
 
     Subprocess.send_message(pid, Internal.build_init_request(opts))
 
-    init_timeout = opts.init_timeout_ms || @default_init_timeout
+    init_timeout = opts.init_timeout_ms
 
     case Internal.wait_for_init_response(init_timeout) do
-      {:ok, _server_info} ->
+      {:ok, _server_info, buffered_messages} ->
+        # Replay messages received during init so they appear in the stream
+        for msg <- buffered_messages, do: send(self(), {:claude_message, msg})
         :ok
 
       {:error, {:cli_exited, reason}} ->
@@ -196,7 +198,7 @@ defmodule ClaudeSDK do
 
     Subprocess.send_message(pid, user_message)
 
-    message_timeout = opts.message_timeout_ms || @default_message_timeout
+    message_timeout = opts.message_timeout_ms
 
     %{
       subprocess: pid,
