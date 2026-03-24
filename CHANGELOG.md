@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.0] - Unreleased
+## [0.2.0] - 2026-03-24
 
 ### Added
 
@@ -14,16 +14,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `sandbox` option with `SandboxSettings` for restricted filesystem/network access
 - `allowed_tools` / `disallowed_tools` options for tool filtering (replaces `tool_filter`)
 - Hook callback support in `ControlRouter` (arity-1 and arity-2 callbacks, lists of callbacks)
-- `ClaudeSDK.Internal` module extracting shared initialization logic from `ClaudeSDK` and `Client`
+- Internal module extracting shared initialization logic from `ClaudeSDK` and `Client`
 - Troubleshooting section in README
+- `ClaudeSDK.Sessions` module — `list_sessions/1`, `get_session_messages/2`, `get_session_info/2`, `rename_session/3`, `tag_session/3`
+- `Client.stop_task/2` for stopping running subtasks
+- `Client.connected?/1` to query connection state
+- `Client.add_mcp_server/3` and `Client.remove_mcp_server/2` for dynamic MCP server management
+- `RateLimitEvent` message type and parser
+- `usage` field on `AssistantMessage` and `stop_reason` on `ResultMessage`
+- Configurable `control_timeout_ms` option (default 30s)
+- Caller process monitoring — Client self-heals to `:connected` when the stream consumer dies
+- Server info cached from init handshake; `get_server_info/1` no longer requires a CLI round-trip
+- CLI version check on subprocess init (warns if < 2.0.0)
+- `AgentDefinition`: `skills`, `memory`, `mcp_servers` fields with validation (model must be sonnet/opus/haiku/inherit, memory must be user/project/local)
+- `SandboxSettings`: `ignore_violations`, `enable_weaker_nested_sandbox` fields
+- `StdioServerConfig`, `SSEServerConfig`, `HttpServerConfig` typed MCP server config structs
+- Init handshake buffers messages received before `control_response` and replays them into the stream
+- Dedicated guides: Getting Started, Multi-Turn Conversations, MCP Servers, Protocol & Architecture
+
+### Fixed
+
+- `output_format` bare map silently dropped in `CommandBuilder`
+- Interrupt race condition via `query_gen` counter on client messages
+- Rewind response catch-all silently returning `:ok` for unknown formats
+- Init response now validated for errors during handshake
+- Unknown keyword keys in `query/2` rejected to catch typos
+- `extract_lines` now uses proper tail recursion with accumulator
+- SDK version read from `mix.exs` instead of hardcoded fallback
+- `permission_prompt_tool_name` mutual exclusivity validation with `can_use_tool` restored (matching Python SDK)
+- `SandboxSettings.allow_unsandboxed_commands` changed from `[String.t()]` to `boolean()` matching Python SDK
+- Dead `{:client_exit, _reason}` 2-tuple pattern removed from Client stream consumer
+- Redundant `timeout || fallback` expressions removed (struct defaults are always present)
+- CLI version check made non-blocking (fire-and-forget via `Task.start`)
+- Session ID validation to prevent path traversal in `Sessions`
 
 ### Improved
 
-- Expanded test coverage across core modules
+- Expanded test coverage across core modules (including 15 AgentDefinition + 7 live integration tests)
 - Comprehensive README rewrite with new sections for output format, sandbox, hooks, and full configuration reference
+- README restructured — detailed content moved to dedicated guides under `guides/`
 - Simplified `ClaudeSDK` and `Client` by extracting common logic into `Internal`
-- `CommandBuilder` now supports `output_format` flag
+- `CommandBuilder` now supports `output_format` flag and `permission_prompt_tool_name`
 - `Options` validation for `can_use_tool` callback arity
+- Internal state names in errors replaced with semantic atoms (`:not_connected`, `:not_streaming`, `:busy`)
+- `send_control_and_await` helper extracted to deduplicate control request boilerplate
+- `ControlRouter` normalizes handler return values (`:allow`, `:deny`, `:ok` → tuples)
+- Session metadata reads streamed instead of loading entire JSONL files
+- Dropped messages in non-streaming client states logged at debug level
+- Actual `elapsed_ms` reported in timeout `ResultMessage`s
 
 ## [0.1.0] - 2025-06-01
 
