@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- MCP server CLI config now only sends `type` and `name` (CLI discovers tools at runtime via control requests)
+- Hook callback result merging accumulates `{:result, map}` values instead of last-write-wins
+- `receive_messages` preserves state through halt for proper stream cleanup
+- `--thinking` CLI flag now sends plain string (`enabled`/`adaptive`/`disabled`) with separate `--max-thinking-tokens` flag
+- `--sandbox` merged into `--settings` instead of being passed as a separate CLI flag
+- MCP tool handlers wrapped in try/rescue to return error results instead of crashing
+- Added catch-all clauses for JSONRPC notifications and unrecognized messages
+- Validation preventing both `json_schema` and `output_format` from being set simultaneously
+
+### Improved
+
+- Expanded test coverage for hooks, MCP error handling, options validation, and command builder
+- Added live integration test suites for streaming, client operations, MCP, and advanced features
+
 ## [0.2.0] - 2026-03-24
 
 ### Added
