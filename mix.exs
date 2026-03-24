@@ -20,7 +20,23 @@ defmodule ClaudeSDK.MixProject do
   defp docs do
     [
       main: "readme",
-      extras: ["README.md", "CHANGELOG.md", "LICENSE"],
+      extras: [
+        "README.md",
+        "guides/getting-started.md",
+        "guides/multi-turn-conversations.md",
+        "guides/mcp-servers.md",
+        "guides/protocol-and-architecture.md",
+        "CHANGELOG.md",
+        "LICENSE"
+      ],
+      groups_for_extras: [
+        Guides: [
+          "guides/getting-started.md",
+          "guides/multi-turn-conversations.md",
+          "guides/mcp-servers.md",
+          "guides/protocol-and-architecture.md"
+        ]
+      ],
       groups_for_modules: [
         Core: [ClaudeSDK, ClaudeSDK.Client, ClaudeSDK.Sessions],
         MCP: [ClaudeSDK.MCP.Server, ClaudeSDK.MCP.Tool],

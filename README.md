@@ -6,40 +6,6 @@
 
 An Elixir SDK that wraps the [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) as a subprocess, communicating via stdin/stdout using newline-delimited JSON. It provides both a stateless streaming API and a stateful multi-turn client. Designed for feature parity with the official [Python Claude Code SDK](https://github.com/anthropics/claude-code-sdk-python).
 
-## Table of Contents
-
-- [Features](#features)
-- [Prerequisites](#prerequisites)
-- [Installation](#installation)
-- [Quick Start](#quick-start)
-  - [Single query](#single-query)
-  - [With options](#with-options)
-  - [Multi-turn client](#multi-turn-client)
-  - [File Checkpointing and Rewind](#file-checkpointing-and-rewind)
-- [Client Features](#client-features)
-- [Message Types](#message-types)
-- [Permission Callbacks](#permission-callbacks)
-- [Tool Configuration](#tool-configuration)
-- [MCP Servers](#mcp-servers)
-- [Structured Output](#structured-output)
-- [Output Format](#output-format)
-- [Session Management](#session-management)
-- [Thinking Configuration](#thinking-configuration)
-- [Effort Levels](#effort-levels)
-- [Partial Messages / StreamEvent](#partial-messages--streamevent)
-- [Environment Variables](#environment-variables)
-- [Agent Definitions](#agent-definitions)
-- [Sandbox](#sandbox)
-- [Hooks](#hooks)
-- [Error Handling](#error-handling)
-- [Supervision Tree](#supervision-tree)
-- [Configuration Reference](#configuration-reference)
-- [Architecture](#architecture)
-- [Testing](#testing)
-- [Troubleshooting](#troubleshooting)
-- [Documentation](#documentation)
-- [License](#license)
-
 ## Features
 
 - **Stateless streaming** -- `ClaudeSDK.query/2` spawns a subprocess per call, streams typed messages, and cleans up automatically
@@ -119,89 +85,7 @@ Client.with_client([options: %Options{permission_mode: :bypass_permissions}], fn
 end)
 ```
 
-Or manage the lifecycle manually:
-
-```elixir
-{:ok, client} = Client.start_link(options: %Options{})
-:ok = Client.connect(client)
-
-Client.query(client, "What is 2+2?") |> Enum.each(&IO.inspect/1)
-Client.query(client, "Now multiply that by 3") |> Enum.each(&IO.inspect/1)
-
-Client.close(client)
-```
-
-### File Checkpointing and Rewind
-
-With the multi-turn client, you can rewind file changes to a previous point:
-
-```elixir
-alias ClaudeSDK.Client
-alias ClaudeSDK.Types.{Options, UserMessage}
-
-Client.with_client(
-  [options: %Options{enable_file_checkpointing: true, permission_mode: :bypass_permissions}],
-  fn client ->
-    # Collect the user message UUID from the stream
-    messages =
-      Client.query(client, "Add a new function to lib/my_app.ex")
-      |> Enum.to_list()
-
-    user_msg = Enum.find(messages, &match?(%UserMessage{}, &1))
-
-    # Later, rewind all file changes back to this point
-    :ok = Client.rewind_files(client, user_msg.uuid)
-  end
-)
-```
-
-## Client Features
-
-> **Note:** The Client does not support concurrent queries. Each Client instance processes one query at a time. For parallel workloads, use separate Client instances.
-
-The multi-turn client supports additional mid-session operations:
-
-```elixir
-alias ClaudeSDK.Client
-
-# Change model or permission mode mid-session
-Client.set_model(client, "claude-sonnet-4-6")
-Client.set_permission_mode(client, :bypass_permissions)
-
-# Interrupt a running query
-Client.interrupt(client)
-
-# Check connection state
-Client.connected?(client)
-
-# Stop a running subtask
-Client.stop_task(client, "task-id-123")
-
-# MCP server management
-{:ok, status} = Client.get_mcp_status(client)
-Client.reconnect_mcp_server(client, "my-server")
-Client.toggle_mcp_server(client, "my-server", false)
-
-# Server info
-{:ok, info} = Client.get_server_info(client)
-```
-
-## Message Types
-
-Both `ClaudeSDK.query/2` and `ClaudeSDK.Client.query/2` return a stream of typed structs:
-
-| Struct | Description |
-|--------|-------------|
-| `AssistantMessage` | Response containing `TextBlock`, `ThinkingBlock`, and/or `ToolUseBlock` content blocks |
-| `ResultMessage` | Final message with cost, timing, session ID, and the text result. Always last in the stream |
-| `UserMessage` | Echo of the user message. Contains a `uuid` for use with `rewind_files/2` |
-| `SystemMessage` | CLI lifecycle notifications (init, heartbeat) |
-| `StreamEvent` | Partial content deltas (only with `include_partial_messages: true`) |
-| `ControlRequest` | Permission checks or MCP calls. Handled automatically when callbacks are configured |
-| `RateLimitEvent` | Rate limit information changes from the API |
-| `TaskStartedMessage` | Emitted when a subtask begins |
-| `TaskProgressMessage` | Progress updates during subtask execution |
-| `TaskNotificationMessage` | Emitted when a subtask completes or fails |
+See the [Multi-turn Conversations](multi-turn-conversations.md) guide for session persistence, resuming, rewind, and more.
 
 ### Extracting text from responses
 
@@ -224,6 +108,23 @@ ClaudeSDK.query("Hello")
   _ -> :ok
 end)
 ```
+
+## Message Types
+
+Both `ClaudeSDK.query/2` and `ClaudeSDK.Client.query/2` return a stream of typed structs:
+
+| Struct | Description |
+|--------|-------------|
+| `AssistantMessage` | Response containing `TextBlock`, `ThinkingBlock`, and/or `ToolUseBlock` content blocks |
+| `ResultMessage` | Final message with cost, timing, session ID, and the text result. Always last in the stream |
+| `UserMessage` | Echo of the user message. Contains a `uuid` for use with `rewind_files/2` |
+| `SystemMessage` | CLI lifecycle notifications (init, heartbeat) |
+| `StreamEvent` | Partial content deltas (only with `include_partial_messages: true`) |
+| `ControlRequest` | Permission checks or MCP calls. Handled automatically when callbacks are configured |
+| `RateLimitEvent` | Rate limit information changes from the API |
+| `TaskStartedMessage` | Emitted when a subtask begins |
+| `TaskProgressMessage` | Progress updates during subtask execution |
+| `TaskNotificationMessage` | Emitted when a subtask completes or fails |
 
 ## Permission Callbacks
 
@@ -251,26 +152,6 @@ end
 
 Return values: `:allow`, `{:allow, updated_input_map}`, `:deny`, or `{:deny, reason}`.
 
-## Tool Configuration
-
-By default the CLI uses its built-in tool set. You can customize which tools are available:
-
-```elixir
-alias ClaudeSDK.Types.Options
-
-# Explicitly select the tool set (`:default` or a list of tool names)
-ClaudeSDK.query("Help me code", %Options{tools: ["Read", "Glob", "Grep", "Bash"]})
-
-# Or keep defaults but filter with allow/deny lists
-ClaudeSDK.query("Help me code", %Options{
-  allowed_tools: ["Read", "Glob", "Grep"],
-  disallowed_tools: ["Bash"]
-})
-|> Enum.each(&IO.inspect/1)
-```
-
-Use `allowed_tools` to restrict to a specific set, `disallowed_tools` to block specific tools, or `tools` to replace the default tool set entirely.
-
 ## MCP Servers
 
 Define in-process MCP tools that Claude can call during a query:
@@ -295,11 +176,31 @@ ClaudeSDK.query("Find user 123", %ClaudeSDK.Types.Options{mcp_servers: [server]}
 |> Enum.each(&IO.inspect/1)
 ```
 
-Tool handlers return `{:ok, result}` or `{:error, reason}`. Results can be strings, maps (JSON-encoded automatically), or lists of MCP content parts.
+See the [MCP Servers](mcp-servers.md) guide for multiple tools, error handling, debugging, and external servers.
+
+## Tool Configuration
+
+By default the CLI uses its built-in tool set. You can customize which tools are available:
+
+```elixir
+alias ClaudeSDK.Types.Options
+
+# Explicitly select the tool set (`:default` or a list of tool name strings)
+ClaudeSDK.query("Help me code", %Options{tools: ["Read", "Glob", "Grep", "Bash"]})
+
+# Or keep defaults but filter with allow/deny lists
+ClaudeSDK.query("Help me code", %Options{
+  allowed_tools: ["Read", "Glob", "Grep"],
+  disallowed_tools: ["Bash"]
+})
+|> Enum.each(&IO.inspect/1)
+```
+
+Use `allowed_tools` to restrict to a specific set, `disallowed_tools` to block specific tools, or `tools` to replace the default tool set entirely.
 
 ## Structured Output
 
-Get responses as structured JSON matching a schema. The result arrives as a JSON string in `ResultMessage.result`:
+Get responses as structured JSON matching a schema:
 
 ```elixir
 alias ClaudeSDK.Types.{Options, ResultMessage}
@@ -349,47 +250,29 @@ ClaudeSDK.query("Summarize this project", %Options{
 
 ## Session Management
 
-> **Important:** The default `session_id` is `"default"`, meaning all queries share a single session unless you explicitly set a different one. Set `session_id` to isolate unrelated conversations.
-
 ```elixir
 alias ClaudeSDK.Types.Options
-
-# Use a custom session ID to isolate conversations
-ClaudeSDK.query("Hello", %Options{session_id: "my-project-session"})
-
-# Continue the most recent session
-ClaudeSDK.query("Follow up on that", %Options{continue: true})
 
 # Resume a specific session by ID
 ClaudeSDK.query("Follow up", %Options{resume: "session_abc123"})
 
+# Continue the most recent session
+ClaudeSDK.query("Follow up on that", %Options{continue: true})
+
 # Fork a session (branch off without modifying the original)
 ClaudeSDK.query("Try a different approach", %Options{fork_session: true})
-```
 
-### Session Introspection
-
-List, read, and annotate sessions stored on disk. These functions work without a running subprocess:
-
-```elixir
-# List sessions for the current directory
+# List and inspect sessions
 sessions = ClaudeSDK.list_sessions()
-# => [%{session_id: "abc123", custom_title: "Auth refactor", ...}, ...]
-
-# List sessions for a specific project directory
-sessions = ClaudeSDK.list_sessions(directory: "/path/to/project", limit: 10)
-
-# Get conversation history for a session
 messages = ClaudeSDK.get_session_messages("abc123")
-
-# Rename and tag sessions
 ClaudeSDK.rename_session("abc123", "Auth refactor discussion")
-ClaudeSDK.tag_session("abc123", "v1.0-release")
 ```
+
+See the [Multi-turn Conversations](multi-turn-conversations.md) guide for the full session lifecycle.
 
 ## Thinking Configuration
 
-Control extended thinking with the `ThinkingConfig` helpers:
+Control extended thinking with the `ClaudeSDK.Types.ThinkingConfig` helpers:
 
 ```elixir
 alias ClaudeSDK.Types.{Options, ThinkingConfig}
@@ -526,8 +409,6 @@ See the [Claude Code hooks documentation](https://docs.anthropic.com/en/docs/cla
 
 ## Error Handling
 
-The SDK defines typed exceptions for different failure modes:
-
 | Exception | When |
 |-----------|------|
 | `CLINotFoundError` | Claude CLI not installed or not on PATH |
@@ -550,20 +431,6 @@ rescue
     IO.puts("Transport error: #{inspect(e.reason)}")
 end
 ```
-
-## Supervision Tree
-
-`ClaudeSDK.Client` is a GenServer and can be placed directly in a supervision tree:
-
-```elixir
-children = [
-  {ClaudeSDK.Client, options: %ClaudeSDK.Types.Options{permission_mode: :bypass_permissions}}
-]
-
-Supervisor.start_link(children, strategy: :one_for_one)
-```
-
-After starting under a supervisor, call `Client.connect/1` to initiate the subprocess, then use `Client.query/2` as normal.
 
 ## Configuration Reference
 
@@ -634,36 +501,21 @@ All options available in `ClaudeSDK.Types.Options`:
 | `cli_path` | Override the auto-discovered CLI binary path |
 | `extra_args` | Escape hatch: additional raw CLI argument strings |
 
-## Architecture
+## Guides
 
-The SDK communicates with the Claude Code CLI via an Erlang Port, exchanging newline-delimited JSON (NDJSON) over stdin/stdout:
-
-```
-Your App --> ClaudeSDK --> Subprocess (Erlang Port) --> Claude CLI
-                               |
-                          LineBuffer (NDJSON parsing)
-                               |
-                          MessageParser (typed structs)
-                               |
-                          ControlRouter (auto-handles permission & MCP requests)
-                               |
-                          Stream of typed messages back to your app
-```
-
-- **`ClaudeSDK.query/2`** spawns a fresh subprocess per call using `Stream.resource/3`
-- **`ClaudeSDK.Client`** is a GenServer that keeps one subprocess alive across calls
-- **Control requests** (tool permissions, MCP calls) are intercepted and handled automatically when callbacks are configured; unhandled requests are forwarded to the stream
+- **[Getting Started](getting-started.md)** -- Installation, first query, understanding the output
+- **[Multi-turn Conversations](multi-turn-conversations.md)** -- Client lifecycle, sessions, rewind, concurrency
+- **[MCP Servers](mcp-servers.md)** -- In-process tools, error handling, debugging, external servers
+- **[Protocol & Architecture](protocol-and-architecture.md)** -- NDJSON protocol, Erlang Ports, message flow, internals
 
 ## Testing
-
-Tests use mock CLI shell scripts in `test/support/` (e.g. `mock_cli_multiturn.sh`, `mock_cli_rewind.sh`) that emit predefined NDJSON responses. This makes the test suite fast and deterministic without requiring the real Claude CLI.
 
 ```bash
 mix test                         # Run all tests (excludes :live tests)
 mix test --include live          # Include integration tests (requires real CLI)
 ```
 
-Live tests (tagged `@tag :live`) hit the real Claude CLI and are excluded by default. To add your own mock-based tests, create a shell script that writes NDJSON to stdout and point the `:cli_path` option at it.
+Tests use mock CLI shell scripts in `test/support/` that emit predefined NDJSON responses. See the [Protocol & Architecture](protocol-and-architecture.md) guide to understand the message format.
 
 ## Troubleshooting
 
@@ -681,8 +533,8 @@ You can also point to a specific binary with `%Options{cli_path: "/path/to/claud
 
 The SDK enforces two timeouts:
 
-- **Initialization** (default 30s) — the CLI must complete its handshake within this window. Increase with `init_timeout_ms`.
-- **Message inactivity** (default 120s) — if no message arrives within this window during streaming, the query ends with a timeout result. Increase with `message_timeout_ms` for long-running operations.
+- **Initialization** (default 30s) -- the CLI must complete its handshake within this window. Increase with `init_timeout_ms`.
+- **Message inactivity** (default 120s) -- if no message arrives within this window during streaming, the query ends with a timeout result. Increase with `message_timeout_ms` for long-running operations.
 
 ```elixir
 ClaudeSDK.query("Complex task", %Options{
@@ -703,7 +555,7 @@ ClaudeSDK.query("Hello", %Options{
 
 ### Concurrent queries on Client
 
-`ClaudeSDK.Client` does not support concurrent queries — calling `query/2` while another is streaming will return `{:error, {:invalid_state, :streaming}}`. Use separate Client instances for parallel workloads.
+`ClaudeSDK.Client` does not support concurrent queries -- calling `query/2` while another is streaming will return `{:error, {:invalid_state, :streaming}}`. Use separate Client instances for parallel workloads.
 
 ## Documentation
 
