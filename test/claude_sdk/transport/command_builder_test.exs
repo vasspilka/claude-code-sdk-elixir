@@ -258,12 +258,13 @@ defmodule ClaudeSDK.Transport.CommandBuilderTest do
       assert {:ok, %{"key" => "value"}} = Jason.decode(Enum.at(args, json_schema_idx + 1))
     end
 
-    test "output_format without json_schema type is ignored" do
+    test "output_format without json_schema type falls through to bare map handler" do
       output_format = %{"type" => "json", "schema" => %{"key" => "value"}}
       args = CommandBuilder.build_args(%Options{output_format: output_format})
 
+      # Bare maps are now treated as json schemas
       json_schema_idx = Enum.find_index(args, &(&1 == "--json-schema"))
-      assert json_schema_idx == nil
+      assert json_schema_idx != nil
     end
 
     test "adds --sandbox as encoded JSON" do

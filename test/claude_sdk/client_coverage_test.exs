@@ -99,11 +99,11 @@ defmodule ClaudeSDK.ClientCoverageTest do
       {:ok, client} = Client.start_link(options: opts)
       :ok = Client.connect(client)
 
-      {:ok, _timeout} = GenServer.call(client, {:start_query, "test", self()})
+      {:ok, _timeout, _gen} = GenServer.call(client, {:start_query, "test", self()})
       assert {:error, {:invalid_state, :streaming}} = Client.reconnect_mcp_server(client, "s")
 
       receive do
-        {:client_message, _} -> :ok
+        {:client_message, _, _} -> :ok
       after
         1000 -> :ok
       end
@@ -132,13 +132,13 @@ defmodule ClaudeSDK.ClientCoverageTest do
       {:ok, client} = Client.start_link(options: opts)
       :ok = Client.connect(client)
 
-      {:ok, _timeout} = GenServer.call(client, {:start_query, "test", self()})
+      {:ok, _timeout, _gen} = GenServer.call(client, {:start_query, "test", self()})
 
       assert {:error, {:invalid_state, :streaming}} =
                Client.toggle_mcp_server(client, "s", true)
 
       receive do
-        {:client_message, _} -> :ok
+        {:client_message, _, _} -> :ok
       after
         1000 -> :ok
       end
@@ -167,11 +167,11 @@ defmodule ClaudeSDK.ClientCoverageTest do
       {:ok, client} = Client.start_link(options: opts)
       :ok = Client.connect(client)
 
-      {:ok, _timeout} = GenServer.call(client, {:start_query, "test", self()})
+      {:ok, _timeout, _gen} = GenServer.call(client, {:start_query, "test", self()})
       assert {:error, {:invalid_state, :streaming}} = Client.get_mcp_status(client)
 
       receive do
-        {:client_message, _} -> :ok
+        {:client_message, _, _} -> :ok
       after
         1000 -> :ok
       end
@@ -397,13 +397,13 @@ defmodule ClaudeSDK.ClientCoverageTest do
       {:ok, client} = Client.start_link(options: opts)
       :ok = Client.connect(client)
 
-      {:ok, _timeout} = GenServer.call(client, {:start_query, "test", self()})
+      {:ok, _timeout, _gen} = GenServer.call(client, {:start_query, "test", self()})
 
       # Simulate CLI exit
       send(client, {:claude_exit, :normal})
 
       # Should receive exit notification
-      assert_receive {:client_exit, :normal}, 1000
+      assert_receive {:client_exit, _gen, :normal}, 1000
 
       Client.close(client)
     end
@@ -416,15 +416,15 @@ defmodule ClaudeSDK.ClientCoverageTest do
       {:ok, client} = Client.start_link(options: opts)
       :ok = Client.connect(client)
 
-      {:ok, timeout} = GenServer.call(client, {:start_query, "test", self()})
+      {:ok, timeout, gen} = GenServer.call(client, {:start_query, "test", self()})
 
       # Send a message that will fail to parse (missing type)
-      send(self(), {:client_message, %{"no_type" => true}})
+      send(self(), {:client_message, gen, %{"no_type" => true}})
 
       # Then send a valid result
       send(
         self(),
-        {:client_message,
+        {:client_message, gen,
          %{
            "type" => "result",
            "subtype" => "success",
@@ -439,7 +439,7 @@ defmodule ClaudeSDK.ClientCoverageTest do
 
       # Consume messages manually using the receive_client_messages flow
       # The first message (no type) should be skipped, second should produce result
-      messages = collect_client_messages({:streaming, timeout, client})
+      messages = collect_client_messages({:streaming, timeout, client, gen})
       result = Enum.find(messages, &match?(%ClaudeSDK.Types.ResultMessage{}, &1))
       assert result != nil
 
@@ -458,13 +458,13 @@ defmodule ClaudeSDK.ClientCoverageTest do
       _messages = Client.query(client, "hello") |> Enum.to_list()
 
       # Put into streaming state manually
-      {:ok, _timeout} = GenServer.call(client, {:start_query, "test", self()})
+      {:ok, _timeout, _gen} = GenServer.call(client, {:start_query, "test", self()})
 
       # Now interrupt
       assert :ok = Client.interrupt(client)
 
       # Should receive exit notification
-      assert_receive {:client_exit, :interrupted}, 1000
+      assert_receive {:client_exit, _gen, :interrupted}, 1000
 
       # Should be back in connected state
       assert :ok = Client.set_model(client, "new-model")
@@ -479,13 +479,13 @@ defmodule ClaudeSDK.ClientCoverageTest do
       {:ok, client} = Client.start_link(options: opts)
       :ok = Client.connect(client)
 
-      {:ok, _timeout} = GenServer.call(client, {:start_query, "test", self()})
+      {:ok, _timeout, _gen} = GenServer.call(client, {:start_query, "test", self()})
 
       assert {:error, :busy} = Client.connect(client)
 
       # Drain and cleanup
       receive do
-        {:client_message, _} -> :ok
+        {:client_message, _, _} -> :ok
       after
         1000 -> :ok
       end
@@ -529,7 +529,7 @@ defmodule ClaudeSDK.ClientCoverageTest do
       {:ok, client} = Client.start_link(options: opts)
       :ok = Client.connect(client)
 
-      {:ok, _timeout} = GenServer.call(client, {:start_query, "test", self()})
+      {:ok, _timeout, _gen} = GenServer.call(client, {:start_query, "test", self()})
 
       # Send an unhandled control_request — should be forwarded to caller
       send(
@@ -542,11 +542,11 @@ defmodule ClaudeSDK.ClientCoverageTest do
          }}
       )
 
-      assert_receive {:client_message, %{"type" => "control_request"}}, 1000
+      assert_receive {:client_message, _gen, %{"type" => "control_request"}}, 1000
 
       # Drain remaining messages
       receive do
-        {:client_message, _} -> :ok
+        {:client_message, _, _} -> :ok
       after
         500 -> :ok
       end
@@ -641,13 +641,13 @@ defmodule ClaudeSDK.ClientCoverageTest do
       {:ok, client} = Client.start_link(options: opts)
       :ok = Client.connect(client)
 
-      {:ok, _timeout} = GenServer.call(client, {:start_query, "test", self()})
+      {:ok, _timeout, _gen} = GenServer.call(client, {:start_query, "test", self()})
 
       assert {:error, {:invalid_state, :streaming}} =
                Client.rewind_files(client, "msg-123")
 
       receive do
-        {:client_message, _} -> :ok
+        {:client_message, _, _} -> :ok
       after
         1000 -> :ok
       end
@@ -663,11 +663,11 @@ defmodule ClaudeSDK.ClientCoverageTest do
       {:ok, client} = Client.start_link(options: opts)
       :ok = Client.connect(client)
 
-      {:ok, _timeout} = GenServer.call(client, {:start_query, "test", self()})
+      {:ok, _timeout, _gen} = GenServer.call(client, {:start_query, "test", self()})
       assert {:error, {:invalid_state, :streaming}} = Client.get_server_info(client)
 
       receive do
-        {:client_message, _} -> :ok
+        {:client_message, _, _} -> :ok
       after
         1000 -> :ok
       end
@@ -706,7 +706,7 @@ defmodule ClaudeSDK.ClientCoverageTest do
       Process.unlink(client)
 
       # Start streaming
-      {:ok, _timeout} = GenServer.call(client, {:start_query, "test", self()})
+      {:ok, _timeout, _gen} = GenServer.call(client, {:start_query, "test", self()})
 
       # Kill the client
       Process.exit(client, :kill)
@@ -812,7 +812,7 @@ defmodule ClaudeSDK.ClientCoverageTest do
 
   describe "parse_rewind_response fallback" do
     @tag :capture_log
-    test "rewind with response lacking success and error keys returns :ok" do
+    test "rewind with response lacking success and error keys returns error" do
       hang_mock = Path.expand("../support/mock_cli_hang_on_control.sh", __DIR__)
       opts = %Options{cli_path: hang_mock}
       {:ok, client} = Client.start_link(options: opts)
@@ -833,7 +833,7 @@ defmodule ClaudeSDK.ClientCoverageTest do
         {:claude_message, %{"type" => "control_response", "response" => %{"request_id" => "r1"}}}
       )
 
-      assert :ok = Task.await(task)
+      assert {:error, :unexpected_response} = Task.await(task)
 
       Client.close(client)
     end
@@ -926,7 +926,7 @@ defmodule ClaudeSDK.ClientCoverageTest do
   # Helper to collect messages similar to how Client.query's Stream.resource works
   defp collect_client_messages(state, acc \\ []) do
     receive do
-      {:client_message, raw} ->
+      {:client_message, _gen, raw} ->
         case ClaudeSDK.MessageParser.parse(raw) do
           {:ok, %ClaudeSDK.Types.ResultMessage{} = msg} ->
             Enum.reverse([msg | acc])
@@ -938,7 +938,7 @@ defmodule ClaudeSDK.ClientCoverageTest do
             collect_client_messages(state, acc)
         end
 
-      {:client_exit, _} ->
+      {:client_exit, _gen, _reason} ->
         Enum.reverse(acc)
     after
       1000 -> Enum.reverse(acc)

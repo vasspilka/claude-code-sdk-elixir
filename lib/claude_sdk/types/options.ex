@@ -136,6 +136,8 @@ defmodule ClaudeSDK.Types.Options do
 
   - `init_timeout_ms` — Timeout in ms for the initialization handshake (default: 30_000).
   - `message_timeout_ms` — Timeout in ms for receiving messages during streaming (default: 120_000).
+  - `control_timeout_ms` — Timeout in ms for control request/response round-trips like
+    `rewind_files`, `get_mcp_status`, etc. (default: 30_000).
 
   """
 
@@ -243,6 +245,7 @@ defmodule ClaudeSDK.Types.Options do
           # Timeouts
           init_timeout_ms: pos_integer(),
           message_timeout_ms: pos_integer(),
+          control_timeout_ms: pos_integer(),
 
           # Extra CLI args (escape hatch)
           extra_args: [String.t()]
@@ -288,6 +291,7 @@ defmodule ClaudeSDK.Types.Options do
             enable_file_checkpointing: false,
             init_timeout_ms: 30_000,
             message_timeout_ms: 120_000,
+            control_timeout_ms: 30_000,
             extra_args: []
 
   @valid_permission_modes [nil, :default, :accept_edits, :plan, :bypass_permissions]

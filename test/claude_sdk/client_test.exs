@@ -207,7 +207,7 @@ defmodule ClaudeSDK.ClientTest do
       :ok = Client.connect(client)
 
       # Put the client into :streaming state by calling start_query
-      assert {:ok, _timeout} =
+      assert {:ok, _timeout, _gen} =
                GenServer.call(client, {:start_query, "test prompt", self()})
 
       # Now set_model should fail because we're streaming
@@ -216,7 +216,7 @@ defmodule ClaudeSDK.ClientTest do
 
       # Clean up: drain messages and finish
       receive do
-        {:client_message, _} -> :ok
+        {:client_message, _, _} -> :ok
       after
         1000 -> :ok
       end
@@ -230,14 +230,14 @@ defmodule ClaudeSDK.ClientTest do
       {:ok, client} = Client.start_link(options: opts)
       :ok = Client.connect(client)
 
-      assert {:ok, _timeout} =
+      assert {:ok, _timeout, _gen} =
                GenServer.call(client, {:start_query, "test prompt", self()})
 
       assert {:error, {:invalid_state, :streaming}} =
                Client.set_permission_mode(client, :plan)
 
       receive do
-        {:client_message, _} -> :ok
+        {:client_message, _, _} -> :ok
       after
         1000 -> :ok
       end

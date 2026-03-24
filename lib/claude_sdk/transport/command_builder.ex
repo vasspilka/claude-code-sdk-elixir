@@ -140,6 +140,11 @@ defmodule ClaudeSDK.Transport.CommandBuilder do
     args ++ ["--json-schema", Jason.encode!(schema)]
   end
 
+  defp add_output_format(args, schema) when is_map(schema) do
+    # Bare schema map — wrap it as json_schema type for the CLI
+    args ++ ["--json-schema", Jason.encode!(schema)]
+  end
+
   defp add_output_format(args, _), do: args
 
   defp add_mcp_config(args, nil), do: args

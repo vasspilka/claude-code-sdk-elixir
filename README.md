@@ -48,7 +48,7 @@ An Elixir SDK that wraps the [Claude Code CLI](https://docs.anthropic.com/en/doc
 - **Permission callbacks** -- Control which tools Claude can use with `can_use_tool`
 - **Typed messages** -- All CLI responses are parsed into typed Elixir structs
 - **Structured output** -- Get JSON responses matching a schema via `json_schema`
-- **Session management** -- Resume, continue, or fork conversation sessions
+- **Session management** -- Resume, continue, fork, list, rename, and tag sessions
 - **File checkpointing** -- Rewind file changes to any point in the conversation
 
 ## Prerequisites
@@ -171,6 +171,12 @@ Client.set_permission_mode(client, :bypass_permissions)
 # Interrupt a running query
 Client.interrupt(client)
 
+# Check connection state
+Client.connected?(client)
+
+# Stop a running subtask
+Client.stop_task(client, "task-id-123")
+
 # MCP server management
 {:ok, status} = Client.get_mcp_status(client)
 Client.reconnect_mcp_server(client, "my-server")
@@ -192,6 +198,7 @@ Both `ClaudeSDK.query/2` and `ClaudeSDK.Client.query/2` return a stream of typed
 | `SystemMessage` | CLI lifecycle notifications (init, heartbeat) |
 | `StreamEvent` | Partial content deltas (only with `include_partial_messages: true`) |
 | `ControlRequest` | Permission checks or MCP calls. Handled automatically when callbacks are configured |
+| `RateLimitEvent` | Rate limit information changes from the API |
 | `TaskStartedMessage` | Emitted when a subtask begins |
 | `TaskProgressMessage` | Progress updates during subtask execution |
 | `TaskNotificationMessage` | Emitted when a subtask completes or fails |
@@ -358,6 +365,26 @@ ClaudeSDK.query("Follow up", %Options{resume: "session_abc123"})
 
 # Fork a session (branch off without modifying the original)
 ClaudeSDK.query("Try a different approach", %Options{fork_session: true})
+```
+
+### Session Introspection
+
+List, read, and annotate sessions stored on disk. These functions work without a running subprocess:
+
+```elixir
+# List sessions for the current directory
+sessions = ClaudeSDK.list_sessions()
+# => [%{session_id: "abc123", custom_title: "Auth refactor", ...}, ...]
+
+# List sessions for a specific project directory
+sessions = ClaudeSDK.list_sessions(directory: "/path/to/project", limit: 10)
+
+# Get conversation history for a session
+messages = ClaudeSDK.get_session_messages("abc123")
+
+# Rename and tag sessions
+ClaudeSDK.rename_session("abc123", "Auth refactor discussion")
+ClaudeSDK.tag_session("abc123", "v1.0-release")
 ```
 
 ## Thinking Configuration
@@ -602,6 +629,7 @@ All options available in `ClaudeSDK.Types.Options`:
 | **Timeouts** | |
 | `init_timeout_ms` | Initialization timeout (default: 30s) |
 | `message_timeout_ms` | Message receive timeout (default: 120s) |
+| `control_timeout_ms` | Control request/response timeout (default: 30s) |
 | **Advanced** | |
 | `cli_path` | Override the auto-discovered CLI binary path |
 | `extra_args` | Escape hatch: additional raw CLI argument strings |

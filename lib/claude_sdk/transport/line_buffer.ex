@@ -65,20 +65,23 @@ defmodule ClaudeSDK.Transport.LineBuffer do
   end
 
   defp extract_lines(data) do
+    extract_lines(data, [])
+  end
+
+  defp extract_lines(data, acc) do
     case String.split(data, "\n", parts: 2) do
       [only] ->
         # No newline found — everything stays in buffer
-        {only, []}
+        {only, Enum.reverse(acc)}
 
       [line, rest] ->
         case parse_line(line) do
           {:ok, parsed} ->
-            {remaining, more} = extract_lines(rest)
-            {remaining, [parsed | more]}
+            extract_lines(rest, [parsed | acc])
 
           {:error, _} ->
             # Skip non-JSON lines (e.g. stderr leaking, empty lines)
-            extract_lines(rest)
+            extract_lines(rest, acc)
         end
     end
   end

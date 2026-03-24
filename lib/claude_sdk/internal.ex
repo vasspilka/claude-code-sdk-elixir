@@ -12,7 +12,7 @@ defmodule ClaudeSDK.Internal do
   def sdk_version do
     case :application.get_key(:claude_sdk, :vsn) do
       {:ok, vsn} -> List.to_string(vsn)
-      :undefined -> "0.1.0"
+      :undefined -> ClaudeSDK.MixProject.project()[:version]
     end
   end
 
@@ -89,6 +89,9 @@ defmodule ClaudeSDK.Internal do
     remaining = max(deadline - System.monotonic_time(:millisecond), 0)
 
     receive do
+      {:claude_message, %{"type" => "control_response", "response" => %{"error" => error}}} ->
+        {:error, {:init_failed, error}}
+
       {:claude_message, %{"type" => "control_response"}} ->
         :ok
 

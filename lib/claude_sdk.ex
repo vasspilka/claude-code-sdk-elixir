@@ -90,6 +90,14 @@ defmodule ClaudeSDK do
   def query(prompt, opts \\ %Options{})
 
   def query(prompt, opts) when is_list(opts) do
+    valid_keys = Map.keys(%Options{}) -- [:__struct__]
+    invalid_keys = Keyword.keys(opts) -- valid_keys
+
+    if invalid_keys != [] do
+      raise ArgumentError,
+            "unknown options #{inspect(invalid_keys)}. Valid options: #{inspect(valid_keys)}"
+    end
+
     query(prompt, struct(Options, opts))
   end
 
@@ -116,6 +124,30 @@ defmodule ClaudeSDK do
   def create_mcp_server(name, version, tools) do
     ClaudeSDK.MCP.Server.create(name, version, tools)
   end
+
+  @doc """
+  List available sessions. See `ClaudeSDK.Sessions.list_sessions/1`.
+  """
+  @spec list_sessions(keyword()) :: [ClaudeSDK.Sessions.session_info()]
+  defdelegate list_sessions(opts \\ []), to: ClaudeSDK.Sessions
+
+  @doc """
+  Get conversation messages for a session. See `ClaudeSDK.Sessions.get_session_messages/2`.
+  """
+  @spec get_session_messages(String.t(), keyword()) :: [ClaudeSDK.Sessions.session_message()]
+  defdelegate get_session_messages(session_id, opts \\ []), to: ClaudeSDK.Sessions
+
+  @doc """
+  Rename a session. See `ClaudeSDK.Sessions.rename_session/3`.
+  """
+  @spec rename_session(String.t(), String.t(), keyword()) :: :ok | {:error, term()}
+  defdelegate rename_session(session_id, title, opts \\ []), to: ClaudeSDK.Sessions
+
+  @doc """
+  Tag a session. See `ClaudeSDK.Sessions.tag_session/3`.
+  """
+  @spec tag_session(String.t(), String.t() | nil, keyword()) :: :ok | {:error, term()}
+  defdelegate tag_session(session_id, tag, opts \\ []), to: ClaudeSDK.Sessions
 
   @doc false
   defdelegate generate_request_id, to: ClaudeSDK.Internal

@@ -22,7 +22,7 @@ defmodule ClaudeSDK.MixProject do
       main: "readme",
       extras: ["README.md", "CHANGELOG.md", "LICENSE"],
       groups_for_modules: [
-        Core: [ClaudeSDK, ClaudeSDK.Client],
+        Core: [ClaudeSDK, ClaudeSDK.Client, ClaudeSDK.Sessions],
         MCP: [ClaudeSDK.MCP.Server, ClaudeSDK.MCP.Tool],
         "Message Types": [
           ClaudeSDK.Types.AssistantMessage,
@@ -34,7 +34,8 @@ defmodule ClaudeSDK.MixProject do
           ClaudeSDK.Types.ControlResponse,
           ClaudeSDK.Types.TaskStartedMessage,
           ClaudeSDK.Types.TaskProgressMessage,
-          ClaudeSDK.Types.TaskNotificationMessage
+          ClaudeSDK.Types.TaskNotificationMessage,
+          ClaudeSDK.Types.RateLimitEvent
         ],
         "Content Blocks": [
           ClaudeSDK.Types.TextBlock,

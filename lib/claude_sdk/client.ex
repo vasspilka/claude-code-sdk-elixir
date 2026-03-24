@@ -81,7 +81,8 @@ defmodule ClaudeSDK.Client do
     :session_id,
     :active_caller,
     :control_timer,
-    state: :disconnected
+    state: :disconnected,
+    query_gen: 0
   ]
 
   # Client API
@@ -213,6 +214,26 @@ defmodule ClaudeSDK.Client do
   end
 
   @doc """
+  Check whether the client is connected and ready for queries.
+  """
+  @spec connected?(GenServer.server()) :: boolean()
+  def connected?(client) do
+    GenServer.call(client, :connected?)
+  catch
+    :exit, _ -> false
+  end
+
+  @doc """
+  Stop a running subtask by its task ID.
+
+  Can only be called when the client is in `:connected` state.
+  """
+  @spec stop_task(GenServer.server(), String.t()) :: :ok | {:error, term()}
+  def stop_task(client, task_id) when is_binary(task_id) do
+    GenServer.call(client, {:stop_task, task_id})
+  end
+
+  @doc """
   Close the client and stop the subprocess.
   """
   @spec close(GenServer.server()) :: :ok
@@ -294,6 +315,10 @@ defmodule ClaudeSDK.Client do
     {:reply, {:error, :busy}, state}
   end
 
+  def handle_call(:connected?, _from, state) do
+    {:reply, state.state == :connected, state}
+  end
+
   def handle_call({:start_query, prompt, caller}, _from, %{state: :connected} = state) do
     user_message = %{
       type: "user",
@@ -304,8 +329,11 @@ defmodule ClaudeSDK.Client do
 
     Subprocess.send_message(state.subprocess, user_message)
 
+    new_gen = state.query_gen + 1
     message_timeout = state.options.message_timeout_ms || @default_message_timeout
-    {:reply, {:ok, message_timeout}, %{state | state: :streaming, active_caller: caller}}
+
+    {:reply, {:ok, message_timeout, new_gen},
+     %{state | state: :streaming, active_caller: caller, query_gen: new_gen}}
   end
 
   def handle_call({:start_query, _prompt, _caller}, _from, %{state: s} = state) do
@@ -334,7 +362,7 @@ defmodule ClaudeSDK.Client do
 
     Subprocess.send_message(state.subprocess, rewind_request)
 
-    timer = Process.send_after(self(), :control_timeout, @default_control_timeout)
+    timer = Process.send_after(self(), :control_timeout, control_timeout(state))
     {:noreply, %{state | state: :awaiting_rewind, active_caller: from, control_timer: timer}}
   end
 
@@ -347,7 +375,7 @@ defmodule ClaudeSDK.Client do
     Subprocess.send_message(state.subprocess, interrupt_msg)
 
     if state.active_caller && is_pid(state.active_caller) do
-      send(state.active_caller, {:client_exit, :interrupted})
+      send(state.active_caller, {:client_exit, state.query_gen, :interrupted})
     end
 
     {:reply, :ok, %{state | state: :connected, active_caller: nil}}
@@ -355,6 +383,21 @@ defmodule ClaudeSDK.Client do
 
   def handle_call(:interrupt, _from, state) do
     {:reply, {:error, {:invalid_state, state.state}}, state}
+  end
+
+  def handle_call({:stop_task, task_id}, _from, %{state: :connected} = state) do
+    control_msg = %{
+      type: "control_request",
+      request_id: Internal.generate_request_id(),
+      request: %{subtype: "stop_task", task_id: task_id}
+    }
+
+    Subprocess.send_message(state.subprocess, control_msg)
+    {:reply, :ok, state}
+  end
+
+  def handle_call({:stop_task, _}, _from, %{state: s} = state) do
+    {:reply, {:error, {:invalid_state, s}}, state}
   end
 
   def handle_call({:set_model, model}, _from, %{state: :connected} = state) do
@@ -398,7 +441,7 @@ defmodule ClaudeSDK.Client do
 
     Subprocess.send_message(state.subprocess, control_msg)
 
-    timer = Process.send_after(self(), :control_timeout, @default_control_timeout)
+    timer = Process.send_after(self(), :control_timeout, control_timeout(state))
 
     {:noreply,
      %{state | state: :awaiting_control_response, active_caller: from, control_timer: timer}}
@@ -419,7 +462,7 @@ defmodule ClaudeSDK.Client do
 
     Subprocess.send_message(state.subprocess, control_msg)
 
-    timer = Process.send_after(self(), :control_timeout, @default_control_timeout)
+    timer = Process.send_after(self(), :control_timeout, control_timeout(state))
 
     {:noreply,
      %{state | state: :awaiting_control_response, active_caller: from, control_timer: timer}}
@@ -440,7 +483,7 @@ defmodule ClaudeSDK.Client do
 
     Subprocess.send_message(state.subprocess, control_msg)
 
-    timer = Process.send_after(self(), :control_timeout, @default_control_timeout)
+    timer = Process.send_after(self(), :control_timeout, control_timeout(state))
 
     {:noreply,
      %{state | state: :awaiting_control_response, active_caller: from, control_timer: timer}}
@@ -461,7 +504,7 @@ defmodule ClaudeSDK.Client do
 
     Subprocess.send_message(state.subprocess, control_msg)
 
-    timer = Process.send_after(self(), :control_timeout, @default_control_timeout)
+    timer = Process.send_after(self(), :control_timeout, control_timeout(state))
 
     {:noreply,
      %{state | state: :awaiting_control_response, active_caller: from, control_timer: timer}}
@@ -507,7 +550,7 @@ defmodule ClaudeSDK.Client do
     session_id = raw["session_id"] || state.session_id
 
     if state.active_caller do
-      send(state.active_caller, {:client_message, raw})
+      send(state.active_caller, {:client_message, state.query_gen, raw})
     end
 
     {:noreply, %{state | state: :connected, session_id: session_id}}
@@ -515,19 +558,20 @@ defmodule ClaudeSDK.Client do
 
   def handle_info({:claude_message, raw}, %{state: :streaming} = state) do
     if state.active_caller do
-      send(state.active_caller, {:client_message, raw})
+      send(state.active_caller, {:client_message, state.query_gen, raw})
     end
 
     {:noreply, state}
   end
 
   def handle_info({:claude_message, _raw}, state) do
+    Logger.debug("Dropping message in #{state.state} state (no active stream)")
     {:noreply, state}
   end
 
   def handle_info({:claude_exit, reason}, state) do
     cancel_control_timer(state)
-    notify_caller_of_exit(state.active_caller, state.state, reason)
+    notify_caller_of_exit(state.active_caller, state.state, reason, state.query_gen)
 
     {:noreply,
      %{state | state: :disconnected, subprocess: nil, active_caller: nil, control_timer: nil}}
@@ -606,26 +650,29 @@ defmodule ClaudeSDK.Client do
 
   defp start_query(client, prompt) do
     case GenServer.call(client, {:start_query, prompt, self()}) do
-      {:ok, message_timeout} -> {:streaming, message_timeout, client}
+      {:ok, message_timeout, gen} -> {:streaming, message_timeout, client, gen}
       {:error, reason} -> raise ClaudeSDK.QueryError, reason: reason
     end
   end
 
   defp receive_client_messages(:halt, _client), do: {:halt, :done}
 
-  defp receive_client_messages({:streaming, message_timeout, client}, _client) do
+  defp receive_client_messages({:streaming, message_timeout, client, gen}, _client) do
     receive do
-      {:client_message, raw} ->
+      {:client_message, ^gen, raw} ->
         case ClaudeSDK.MessageParser.parse(raw) do
           {:ok, %ClaudeSDK.Types.ResultMessage{} = msg} ->
             {[msg], :halt}
 
           {:ok, msg} ->
-            {[msg], {:streaming, message_timeout, client}}
+            {[msg], {:streaming, message_timeout, client, gen}}
 
           {:error, _} ->
-            {[], {:streaming, message_timeout, client}}
+            {[], {:streaming, message_timeout, client, gen}}
         end
+
+      {:client_exit, ^gen, _reason} ->
+        {:halt, :done}
 
       {:client_exit, _reason} ->
         {:halt, :done}
@@ -643,15 +690,24 @@ defmodule ClaudeSDK.Client do
     end
   end
 
-  defp maybe_forward_to_caller(raw, %{active_caller: caller}) when is_pid(caller) do
-    send(caller, {:client_message, raw})
+  defp control_timeout(%{options: opts}) do
+    opts.control_timeout_ms || @default_control_timeout
+  end
+
+  defp maybe_forward_to_caller(raw, %{active_caller: caller, query_gen: gen})
+       when is_pid(caller) do
+    send(caller, {:client_message, gen, raw})
   end
 
   defp maybe_forward_to_caller(_raw, _state), do: :ok
 
   defp parse_rewind_response(%{"response" => %{"success" => true}}), do: :ok
   defp parse_rewind_response(%{"response" => %{"error" => error}}), do: {:error, error}
-  defp parse_rewind_response(_), do: :ok
+
+  defp parse_rewind_response(other) do
+    Logger.warning("Unexpected rewind response format: #{inspect(other)}")
+    {:error, :unexpected_response}
+  end
 
   defp cancel_control_timer(%{control_timer: ref}) when is_reference(ref) do
     Process.cancel_timer(ref)
@@ -667,22 +723,22 @@ defmodule ClaudeSDK.Client do
 
   # Notify the active caller about subprocess exit, handling both
   # pid callers (streaming) and GenServer.reply tuples (awaiting states).
-  defp notify_caller_of_exit(nil, _state, _reason), do: :ok
+  defp notify_caller_of_exit(nil, _state, _reason, _gen), do: :ok
 
-  defp notify_caller_of_exit(caller, _state, reason) when is_pid(caller) do
-    send(caller, {:client_exit, reason})
+  defp notify_caller_of_exit(caller, _state, reason, gen) when is_pid(caller) do
+    send(caller, {:client_exit, gen, reason})
   rescue
     ArgumentError -> :ok
   end
 
-  defp notify_caller_of_exit(caller, state, reason)
+  defp notify_caller_of_exit(caller, state, reason, _gen)
        when state in [:awaiting_rewind, :awaiting_control_response] do
     GenServer.reply(caller, {:error, {:cli_exited, reason}})
   rescue
     ArgumentError -> :ok
   end
 
-  defp notify_caller_of_exit(caller, state, reason) do
+  defp notify_caller_of_exit(caller, state, reason, _gen) do
     Logger.warning(
       "Unexpected caller state in notify_caller_of_exit: " <>
         "caller=#{inspect(caller)}, state=#{inspect(state)}, reason=#{inspect(reason)}"

@@ -14,6 +14,7 @@ defmodule ClaudeSDK.MessageParser do
     AssistantMessage,
     ControlRequest,
     ControlResponse,
+    RateLimitEvent,
     ResultMessage,
     StreamEvent,
     SystemMessage,
@@ -38,6 +39,7 @@ defmodule ClaudeSDK.MessageParser do
           | TaskStartedMessage.t()
           | TaskProgressMessage.t()
           | TaskNotificationMessage.t()
+          | RateLimitEvent.t()
 
   @doc """
   Parse a raw JSON map into a typed message struct.
@@ -52,6 +54,7 @@ defmodule ClaudeSDK.MessageParser do
   def parse(%{"type" => "stream_event"} = raw), do: {:ok, parse_stream_event(raw)}
   def parse(%{"type" => "control_request"} = raw), do: {:ok, parse_control_request(raw)}
   def parse(%{"type" => "control_response"} = raw), do: {:ok, parse_control_response(raw)}
+  def parse(%{"type" => "rate_limit"} = raw), do: {:ok, parse_rate_limit(raw)}
   def parse(%{"type" => "task_started"} = raw), do: {:ok, parse_task_started(raw)}
   def parse(%{"type" => "task_progress"} = raw), do: {:ok, parse_task_progress(raw)}
   def parse(%{"type" => "task_notification"} = raw), do: {:ok, parse_task_notification(raw)}
@@ -149,6 +152,14 @@ defmodule ClaudeSDK.MessageParser do
   defp parse_control_response(raw) do
     %ControlResponse{
       response: raw["response"] || %{}
+    }
+  end
+
+  # Rate limit event
+
+  defp parse_rate_limit(raw) do
+    %RateLimitEvent{
+      rate_limit: Map.drop(raw, ["type"])
     }
   end
 

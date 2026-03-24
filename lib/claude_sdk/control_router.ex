@@ -12,7 +12,15 @@ defmodule ClaudeSDK.ControlRouter do
 
   require Logger
 
-  @type handler :: (map() -> {:allow, map()} | {:deny, String.t()} | {:result, map()})
+  @type handler ::
+          (map() ->
+             :allow
+             | {:allow, map()}
+             | :deny
+             | {:deny, String.t()}
+             | {:result, map()}
+             | :ok
+             | {:ok, map()})
   @type handler_registry :: %{String.t() => handler()}
 
   @doc """

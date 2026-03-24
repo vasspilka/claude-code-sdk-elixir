@@ -293,6 +293,25 @@ defmodule ClaudeSDK.Types.TaskProgressMessage do
             last_tool_name: nil
 end
 
+defmodule ClaudeSDK.Types.RateLimitEvent do
+  @moduledoc """
+  Emitted when rate limit information changes.
+
+  Contains details about current rate limiting state from the API.
+
+  ## Fields
+
+  - `rate_limit` — Map with rate limit details (e.g. `"remaining"`, `"limit"`, `"reset"`).
+  """
+
+  @type t :: %__MODULE__{
+          type: :rate_limit,
+          rate_limit: map()
+        }
+
+  defstruct type: :rate_limit, rate_limit: %{}
+end
+
 defmodule ClaudeSDK.Types.TaskNotificationMessage do
   @moduledoc """
   Emitted when a subtask completes, fails, or is stopped.
