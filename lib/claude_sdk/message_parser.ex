@@ -82,7 +82,8 @@ defmodule ClaudeSDK.MessageParser do
     %AssistantMessage{
       message: %{content: content, model: message["model"]},
       parent_tool_use_id: raw["parent_tool_use_id"],
-      error: raw["error"]
+      error: raw["error"],
+      usage: message["usage"] || raw["usage"]
     }
   end
 
@@ -121,7 +122,8 @@ defmodule ClaudeSDK.MessageParser do
       total_cost_usd: raw["total_cost_usd"],
       usage: raw["usage"] || %{},
       result: raw["result"],
-      structured_output: raw["structured_output"]
+      structured_output: raw["structured_output"],
+      stop_reason: raw["stop_reason"]
     }
   end
 

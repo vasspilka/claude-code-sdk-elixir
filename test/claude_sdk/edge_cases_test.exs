@@ -176,7 +176,7 @@ defmodule ClaudeSDK.EdgeCasesTest do
       assert {:error, {:cli_exited, _}} = Client.rewind_files(client, "msg-123")
 
       # Client should be in :disconnected state now — set_model requires :connected
-      assert {:error, {:invalid_state, :disconnected}} = Client.set_model(client, "new-model")
+      assert {:error, :not_connected} = Client.set_model(client, "new-model")
 
       Client.close(client)
     end

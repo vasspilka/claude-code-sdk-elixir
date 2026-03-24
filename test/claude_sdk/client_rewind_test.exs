@@ -40,7 +40,7 @@ defmodule ClaudeSDK.ClientRewindTest do
       opts = %Options{cli_path: @mock_cli_path, enable_file_checkpointing: true}
       {:ok, client} = Client.start_link(options: opts)
 
-      assert {:error, {:invalid_state, :disconnected}} =
+      assert {:error, :not_connected} =
                Client.rewind_files(client, "msg_001")
 
       Client.close(client)

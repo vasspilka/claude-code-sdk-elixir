@@ -55,8 +55,10 @@ defmodule ClaudeSDK.ControlRouter do
 
       handler when is_function(handler, 1) ->
         try do
-          case handler.(request) do
-            {tag, _} = result when tag in [:allow, :deny, :result] ->
+          result = normalize_handler_result(handler.(request))
+
+          case result do
+            {tag, _} when tag in [:allow, :deny, :result] ->
               response = build_response(request_id, subtype, result)
               {:handled, response}
 
@@ -208,20 +210,17 @@ defmodule ClaudeSDK.ControlRouter do
   defp maybe_add_hook_handler(handlers, _opts), do: handlers
 
   defp run_hook_callbacks(callbacks, hook_event, hook_input) do
-    Enum.reduce_while(callbacks, {:result, %{}}, fn callback, _acc ->
-      result =
-        cond do
-          is_function(callback, 1) ->
-            run_single_hook_callback(callback, hook_event, hook_input)
+    Enum.reduce(callbacks, {:result, %{}}, fn callback, _acc ->
+      cond do
+        is_function(callback, 1) ->
+          run_single_hook_callback(callback, hook_event, hook_input)
 
-          is_function(callback, 2) ->
-            run_single_hook_callback_2(callback, hook_event, hook_input)
+        is_function(callback, 2) ->
+          run_single_hook_callback_2(callback, hook_event, hook_input)
 
-          true ->
-            {:result, %{}}
-        end
-
-      {:cont, result}
+        true ->
+          {:result, %{}}
+      end
     end)
   end
 
@@ -250,6 +249,12 @@ defmodule ClaudeSDK.ControlRouter do
       Logger.warning("Hook callback raised: #{Exception.message(e)}")
       {:result, %{}}
   end
+
+  defp normalize_handler_result(:allow), do: {:allow, %{}}
+  defp normalize_handler_result(:deny), do: {:deny, "Permission denied"}
+  defp normalize_handler_result(:ok), do: {:result, %{}}
+  defp normalize_handler_result({:ok, map}) when is_map(map), do: {:result, map}
+  defp normalize_handler_result(other), do: other
 
   defp build_error_response(request_id, message) do
     %{

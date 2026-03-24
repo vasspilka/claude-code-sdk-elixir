@@ -37,13 +37,15 @@ defmodule ClaudeSDK.Types.AssistantMessage do
             model: String.t() | nil
           },
           parent_tool_use_id: String.t() | nil,
-          error: map() | nil
+          error: map() | nil,
+          usage: map() | nil
         }
 
   defstruct type: :assistant,
             message: %{content: [], model: nil},
             parent_tool_use_id: nil,
-            error: nil
+            error: nil,
+            usage: nil
 end
 
 defmodule ClaudeSDK.Types.UserMessage do
@@ -122,6 +124,7 @@ defmodule ClaudeSDK.Types.ResultMessage do
   - `usage` — Token usage breakdown map.
   - `result` — Final text result string, or structured JSON when using `json_schema`.
   - `structured_output` — Parsed structured output map when using `output_format`, or nil.
+  - `stop_reason` — Why the query stopped (e.g. `"end_turn"`, `"max_tokens"`, `"stop_sequence"`), or nil.
   """
 
   @type t :: %__MODULE__{
@@ -135,7 +138,8 @@ defmodule ClaudeSDK.Types.ResultMessage do
           total_cost_usd: float() | nil,
           usage: map(),
           result: String.t() | nil,
-          structured_output: map() | nil
+          structured_output: map() | nil,
+          stop_reason: String.t() | nil
         }
 
   defstruct type: :result,
@@ -148,7 +152,8 @@ defmodule ClaudeSDK.Types.ResultMessage do
             total_cost_usd: nil,
             usage: %{},
             result: nil,
-            structured_output: nil
+            structured_output: nil,
+            stop_reason: nil
 end
 
 defmodule ClaudeSDK.Types.StreamEvent do

@@ -173,7 +173,7 @@ defmodule ClaudeSDK do
     init_timeout = opts.init_timeout_ms || @default_init_timeout
 
     case Internal.wait_for_init_response(init_timeout) do
-      :ok ->
+      {:ok, _server_info} ->
         :ok
 
       {:error, {:cli_exited, reason}} ->
@@ -197,7 +197,13 @@ defmodule ClaudeSDK do
     Subprocess.send_message(pid, user_message)
 
     message_timeout = opts.message_timeout_ms || @default_message_timeout
-    %{subprocess: pid, control_handlers: control_handlers, message_timeout: message_timeout}
+
+    %{
+      subprocess: pid,
+      control_handlers: control_handlers,
+      message_timeout: message_timeout,
+      started_at: System.monotonic_time(:millisecond)
+    }
   end
 
   # Stream.resource next_fun: receive and parse messages
@@ -242,14 +248,15 @@ defmodule ClaudeSDK do
     after
       message_timeout ->
         timeout_seconds = div(message_timeout, 1000)
+        elapsed_ms = System.monotonic_time(:millisecond) - state.started_at
 
         timeout_result = %ClaudeSDK.Types.ResultMessage{
           subtype: "error",
           is_error: true,
           result: "Message receive timeout after #{timeout_seconds}s",
-          duration_ms: 0,
-          duration_api_ms: 0,
-          num_turns: 0,
+          duration_ms: elapsed_ms,
+          duration_api_ms: nil,
+          num_turns: nil,
           session_id: nil
         }
 

@@ -88,20 +88,24 @@ defmodule ClaudeSDK.Sessions do
   """
   @spec get_session_messages(String.t(), keyword()) :: [session_message()]
   def get_session_messages(session_id, opts \\ []) do
-    directory = Keyword.get(opts, :directory, File.cwd!())
-    limit = Keyword.get(opts, :limit)
-    offset = Keyword.get(opts, :offset, 0)
+    with :ok <- validate_session_id(session_id) do
+      directory = Keyword.get(opts, :directory, File.cwd!())
+      limit = Keyword.get(opts, :limit)
+      offset = Keyword.get(opts, :offset, 0)
 
-    case find_session_file(session_id, directory) do
-      nil ->
-        []
+      case find_session_file(session_id, directory) do
+        nil ->
+          []
 
-      path ->
-        path
-        |> read_jsonl()
-        |> build_conversation_chain()
-        |> Enum.drop(offset)
-        |> then(fn msgs -> if limit, do: Enum.take(msgs, limit), else: msgs end)
+        path ->
+          path
+          |> read_jsonl()
+          |> build_conversation_chain()
+          |> Enum.drop(offset)
+          |> then(fn msgs -> if limit, do: Enum.take(msgs, limit), else: msgs end)
+      end
+    else
+      {:error, :invalid_session_id} -> []
     end
   end
 
@@ -112,15 +116,17 @@ defmodule ClaudeSDK.Sessions do
   """
   @spec rename_session(String.t(), String.t(), keyword()) :: :ok | {:error, term()}
   def rename_session(session_id, title, opts \\ []) do
-    directory = Keyword.get(opts, :directory, File.cwd!())
+    with :ok <- validate_session_id(session_id) do
+      directory = Keyword.get(opts, :directory, File.cwd!())
 
-    entry = %{
-      "type" => "custom-title",
-      "customTitle" => title,
-      "sessionId" => session_id
-    }
+      entry = %{
+        "type" => "custom-title",
+        "customTitle" => title,
+        "sessionId" => session_id
+      }
 
-    append_to_session(session_id, entry, directory)
+      append_to_session(session_id, entry, directory)
+    end
   end
 
   @doc """
@@ -130,18 +136,33 @@ defmodule ClaudeSDK.Sessions do
   """
   @spec tag_session(String.t(), String.t() | nil, keyword()) :: :ok | {:error, term()}
   def tag_session(session_id, tag, opts \\ []) do
-    directory = Keyword.get(opts, :directory, File.cwd!())
+    with :ok <- validate_session_id(session_id) do
+      directory = Keyword.get(opts, :directory, File.cwd!())
 
-    entry = %{
-      "type" => "tag",
-      "tag" => tag || "",
-      "sessionId" => session_id
-    }
+      entry = %{
+        "type" => "tag",
+        "tag" => tag || "",
+        "sessionId" => session_id
+      }
 
-    append_to_session(session_id, entry, directory)
+      append_to_session(session_id, entry, directory)
+    end
   end
 
   # Private
+
+  # Validate session_id to prevent path traversal attacks.
+  # Claude Code uses UUIDs for session IDs; reject anything with
+  # path separators or parent-directory references.
+  defp validate_session_id(session_id) do
+    cond do
+      String.contains?(session_id, "/") -> {:error, :invalid_session_id}
+      String.contains?(session_id, "\\") -> {:error, :invalid_session_id}
+      String.contains?(session_id, "..") -> {:error, :invalid_session_id}
+      session_id == "" -> {:error, :invalid_session_id}
+      true -> :ok
+    end
+  end
 
   defp projects_dir do
     claude_home = System.get_env("CLAUDE_CONFIG_DIR") || Path.join(System.user_home!(), ".claude")
@@ -214,36 +235,68 @@ defmodule ClaudeSDK.Sessions do
 
   defp posix_to_datetime(_), do: nil
 
-  # Read head and tail of JSONL to extract metadata without full parse
+  # Read head and tail of JSONL to extract metadata without loading entire file.
+  # Uses streaming for the head and reads the tail by seeking to the end.
   defp read_session_metadata(path) do
-    case File.read(path) do
-      {:ok, content} ->
-        lines = String.split(content, "\n", trim: true)
-        head = Enum.take(lines, 20)
-        tail = lines |> Enum.reverse() |> Enum.take(20)
-        all_sample = Enum.uniq(head ++ tail)
+    head = read_head_lines(path, 20)
+    tail = read_tail_lines(path, 20)
+    all_sample = Enum.uniq(head ++ tail)
 
-        entries =
-          Enum.reduce(all_sample, [], fn line, acc ->
-            case Jason.decode(line) do
-              {:ok, entry} -> [entry | acc]
-              _ -> acc
-            end
-          end)
+    entries =
+      Enum.reduce(all_sample, [], fn line, acc ->
+        case Jason.decode(line) do
+          {:ok, entry} -> [entry | acc]
+          _ -> acc
+        end
+      end)
 
-        first_prompt = find_first_prompt(head)
+    first_prompt = find_first_prompt(head)
 
-        %{
-          custom_title: find_last_value(entries, "custom-title", "customTitle"),
-          summary: find_last_value(entries, "summary", "summary"),
-          first_prompt: first_prompt,
-          git_branch: find_first_value(entries, "gitBranch"),
-          cwd: find_first_value(entries, "cwd"),
-          tag: find_last_value(entries, "tag", "tag")
-        }
+    %{
+      custom_title: find_last_value(entries, "custom-title", "customTitle"),
+      summary: find_last_value(entries, "summary", "summary"),
+      first_prompt: first_prompt,
+      git_branch: find_first_value(entries, "gitBranch"),
+      cwd: find_first_value(entries, "cwd"),
+      tag: find_last_value(entries, "tag", "tag")
+    }
+  rescue
+    _ -> %{}
+  end
 
-      {:error, _} ->
-        %{}
+  defp read_head_lines(path, n) do
+    path
+    |> File.stream!()
+    |> Stream.map(&String.trim_trailing/1)
+    |> Stream.reject(&(&1 == ""))
+    |> Enum.take(n)
+  end
+
+  defp read_tail_lines(path, n) do
+    case File.stat(path) do
+      {:ok, %{size: size}} when size > 0 ->
+        # Read last ~64KB to get the tail lines (generous for metadata entries)
+        chunk_size = min(size, 65_536)
+        {:ok, file} = File.open(path, [:read, :binary])
+
+        try do
+          {:ok, _} = :file.position(file, {:eof, -chunk_size})
+
+          case :file.read(file, chunk_size) do
+            {:ok, data} ->
+              data
+              |> String.split("\n", trim: true)
+              |> Enum.take(-n)
+
+            _ ->
+              []
+          end
+        after
+          File.close(file)
+        end
+
+      _ ->
+        []
     end
   end
 

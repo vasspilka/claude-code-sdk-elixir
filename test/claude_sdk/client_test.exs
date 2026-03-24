@@ -122,10 +122,10 @@ defmodule ClaudeSDK.ClientTest do
       opts = %Options{cli_path: @mock_cli_path}
       {:ok, client} = Client.start_link(options: opts)
 
-      assert {:error, {:invalid_state, :disconnected}} = Client.interrupt(client)
+      assert {:error, :not_connected} = Client.interrupt(client)
 
       :ok = Client.connect(client)
-      assert {:error, {:invalid_state, :connected}} = Client.interrupt(client)
+      assert {:error, :not_streaming} = Client.interrupt(client)
 
       Client.close(client)
     end
@@ -134,7 +134,7 @@ defmodule ClaudeSDK.ClientTest do
       opts = %Options{cli_path: @mock_cli_path}
       {:ok, client} = Client.start_link(options: opts)
 
-      assert {:error, {:invalid_state, :disconnected}} =
+      assert {:error, :not_connected} =
                Client.set_model(client, "claude-sonnet-4-20250514")
 
       Client.close(client)
@@ -154,7 +154,7 @@ defmodule ClaudeSDK.ClientTest do
       opts = %Options{cli_path: @mock_cli_path}
       {:ok, client} = Client.start_link(options: opts)
 
-      assert {:error, {:invalid_state, :disconnected}} =
+      assert {:error, :not_connected} =
                Client.set_permission_mode(client, :bypass_permissions)
 
       Client.close(client)
@@ -174,7 +174,7 @@ defmodule ClaudeSDK.ClientTest do
       opts = %Options{cli_path: @mock_cli_path}
       {:ok, client} = Client.start_link(options: opts)
 
-      assert {:error, {:invalid_state, :disconnected}} = Client.get_mcp_status(client)
+      assert {:error, :not_connected} = Client.get_mcp_status(client)
 
       Client.close(client)
     end
@@ -183,7 +183,7 @@ defmodule ClaudeSDK.ClientTest do
       opts = %Options{cli_path: @mock_cli_path}
       {:ok, client} = Client.start_link(options: opts)
 
-      assert {:error, {:invalid_state, :disconnected}} =
+      assert {:error, :not_connected} =
                Client.reconnect_mcp_server(client, "my-server")
 
       Client.close(client)
@@ -193,7 +193,7 @@ defmodule ClaudeSDK.ClientTest do
       opts = %Options{cli_path: @mock_cli_path}
       {:ok, client} = Client.start_link(options: opts)
 
-      assert {:error, {:invalid_state, :disconnected}} =
+      assert {:error, :not_connected} =
                Client.toggle_mcp_server(client, "my-server", false)
 
       Client.close(client)
@@ -201,7 +201,7 @@ defmodule ClaudeSDK.ClientTest do
 
     test "set_model returns error when streaming (via GenServer call)" do
       # Test the GenServer state machine directly:
-      # When state is :streaming, set_model should return {:error, {:invalid_state, :streaming}}
+      # When state is :streaming, set_model should return {:error, :busy}
       opts = %Options{cli_path: @mock_cli_path}
       {:ok, client} = Client.start_link(options: opts)
       :ok = Client.connect(client)
@@ -211,7 +211,7 @@ defmodule ClaudeSDK.ClientTest do
                GenServer.call(client, {:start_query, "test prompt", self()})
 
       # Now set_model should fail because we're streaming
-      assert {:error, {:invalid_state, :streaming}} =
+      assert {:error, :busy} =
                Client.set_model(client, "claude-sonnet-4-20250514")
 
       # Clean up: drain messages and finish
@@ -233,7 +233,7 @@ defmodule ClaudeSDK.ClientTest do
       assert {:ok, _timeout, _gen} =
                GenServer.call(client, {:start_query, "test prompt", self()})
 
-      assert {:error, {:invalid_state, :streaming}} =
+      assert {:error, :busy} =
                Client.set_permission_mode(client, :plan)
 
       receive do

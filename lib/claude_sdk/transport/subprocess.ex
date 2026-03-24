@@ -72,8 +72,12 @@ defmodule ClaudeSDK.Transport.Subprocess do
       end
 
     case cli_path do
-      {:error, e} -> {:stop, e}
-      cli_path -> do_init(cli_path, caller, options)
+      {:error, e} ->
+        {:stop, e}
+
+      cli_path ->
+        check_cli_version(cli_path)
+        do_init(cli_path, caller, options)
     end
   end
 
@@ -117,6 +121,46 @@ defmodule ClaudeSDK.Transport.Subprocess do
       e in [ErlangError, ArgumentError, SystemLimitError] ->
         {:stop, Exception.message(e)}
     end
+  end
+
+  @minimum_cli_version "2.0.0"
+  @version_check_timeout_ms 2_000
+
+  defp check_cli_version(cli_path) do
+    # Run version check asynchronously to avoid blocking subprocess init.
+    # Uses a short timeout so slow/unresponsive CLIs don't delay startup.
+    task =
+      Task.async(fn ->
+        CLIDiscovery.version(cli_path)
+      end)
+
+    case Task.yield(task, @version_check_timeout_ms) || Task.shutdown(task) do
+      {:ok, {:ok, version_string}} ->
+        compare_version(version_string)
+
+      _ ->
+        Logger.debug("Could not determine Claude CLI version")
+    end
+  rescue
+    _ -> Logger.debug("Could not parse Claude CLI version")
+  end
+
+  defp compare_version(version_string) do
+    version =
+      version_string
+      |> String.trim_leading("v")
+      |> String.split(".")
+      |> Enum.take(3)
+      |> Enum.join(".")
+
+    if Version.compare(version, @minimum_cli_version) == :lt do
+      Logger.warning(
+        "Claude CLI version #{version_string} is below minimum #{@minimum_cli_version}. " <>
+          "Some features may not work. Run `npm install -g @anthropic-ai/claude-code` to update."
+      )
+    end
+  rescue
+    _ -> Logger.debug("Could not parse Claude CLI version: #{version_string}")
   end
 
   @impl true

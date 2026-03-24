@@ -79,7 +79,7 @@ defmodule ClaudeSDK.Internal do
   end
 
   @doc false
-  @spec wait_for_init_response(pos_integer()) :: :ok | {:error, term()}
+  @spec wait_for_init_response(pos_integer()) :: {:ok, map()} | {:error, term()}
   def wait_for_init_response(timeout) do
     deadline = System.monotonic_time(:millisecond) + timeout
     wait_for_init_loop(deadline)
@@ -92,8 +92,11 @@ defmodule ClaudeSDK.Internal do
       {:claude_message, %{"type" => "control_response", "response" => %{"error" => error}}} ->
         {:error, {:init_failed, error}}
 
+      {:claude_message, %{"type" => "control_response", "response" => response}} ->
+        {:ok, response || %{}}
+
       {:claude_message, %{"type" => "control_response"}} ->
-        :ok
+        {:ok, %{}}
 
       {:claude_message, %{"type" => _}} ->
         wait_for_init_loop(deadline)

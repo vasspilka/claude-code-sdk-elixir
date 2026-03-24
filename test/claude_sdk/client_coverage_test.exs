@@ -63,16 +63,11 @@ defmodule ClaudeSDK.ClientCoverageTest do
   end
 
   describe "get_server_info when connected" do
-    @tag :capture_log
-    test "sends control request and receives response" do
+    test "returns cached init data" do
       opts = %Options{cli_path: @mock_cli_multiturn}
       {:ok, client} = Client.start_link(options: opts)
       :ok = Client.connect(client)
 
-      # Complete a query first
-      _messages = Client.query(client, "hello") |> Enum.to_list()
-
-      # get_server_info sends a control_request; the mock responds to control_requests
       assert {:ok, response} = Client.get_server_info(client)
       assert is_map(response)
 
@@ -100,7 +95,7 @@ defmodule ClaudeSDK.ClientCoverageTest do
       :ok = Client.connect(client)
 
       {:ok, _timeout, _gen} = GenServer.call(client, {:start_query, "test", self()})
-      assert {:error, {:invalid_state, :streaming}} = Client.reconnect_mcp_server(client, "s")
+      assert {:error, :busy} = Client.reconnect_mcp_server(client, "s")
 
       receive do
         {:client_message, _, _} -> :ok
@@ -134,7 +129,7 @@ defmodule ClaudeSDK.ClientCoverageTest do
 
       {:ok, _timeout, _gen} = GenServer.call(client, {:start_query, "test", self()})
 
-      assert {:error, {:invalid_state, :streaming}} =
+      assert {:error, :busy} =
                Client.toggle_mcp_server(client, "s", true)
 
       receive do
@@ -168,7 +163,7 @@ defmodule ClaudeSDK.ClientCoverageTest do
       :ok = Client.connect(client)
 
       {:ok, _timeout, _gen} = GenServer.call(client, {:start_query, "test", self()})
-      assert {:error, {:invalid_state, :streaming}} = Client.get_mcp_status(client)
+      assert {:error, :busy} = Client.get_mcp_status(client)
 
       receive do
         {:client_message, _, _} -> :ok
@@ -643,7 +638,7 @@ defmodule ClaudeSDK.ClientCoverageTest do
 
       {:ok, _timeout, _gen} = GenServer.call(client, {:start_query, "test", self()})
 
-      assert {:error, {:invalid_state, :streaming}} =
+      assert {:error, :busy} =
                Client.rewind_files(client, "msg-123")
 
       receive do
@@ -658,13 +653,14 @@ defmodule ClaudeSDK.ClientCoverageTest do
   end
 
   describe "Client get_server_info while streaming" do
-    test "get_server_info returns error when streaming" do
+    test "get_server_info returns cached data even while streaming" do
       opts = %Options{cli_path: @mock_cli_multiturn}
       {:ok, client} = Client.start_link(options: opts)
       :ok = Client.connect(client)
 
       {:ok, _timeout, _gen} = GenServer.call(client, {:start_query, "test", self()})
-      assert {:error, {:invalid_state, :streaming}} = Client.get_server_info(client)
+      assert {:ok, info} = Client.get_server_info(client)
+      assert is_map(info)
 
       receive do
         {:client_message, _, _} -> :ok
@@ -689,7 +685,7 @@ defmodule ClaudeSDK.ClientCoverageTest do
       Process.sleep(50)
 
       # Client should be disconnected now
-      assert {:error, {:invalid_state, :disconnected}} = Client.set_model(client, "m")
+      assert {:error, :not_connected} = Client.set_model(client, "m")
 
       Client.close(client)
     end

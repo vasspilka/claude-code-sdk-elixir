@@ -313,7 +313,12 @@ defmodule ClaudeSDK.Types.Options do
          :ok <- validate_max_budget_usd(opts.max_budget_usd),
          :ok <- validate_permission_mode(opts.permission_mode),
          :ok <- validate_effort(opts.effort),
-         :ok <- validate_can_use_tool(opts.can_use_tool) do
+         :ok <- validate_can_use_tool(opts.can_use_tool),
+         :ok <- validate_timeout(:init_timeout_ms, opts.init_timeout_ms),
+         :ok <- validate_timeout(:message_timeout_ms, opts.message_timeout_ms),
+         :ok <- validate_timeout(:control_timeout_ms, opts.control_timeout_ms),
+         :ok <- validate_session_options(opts),
+         :ok <- validate_permission_options(opts) do
       :ok
     end
   end
@@ -348,4 +353,24 @@ defmodule ClaudeSDK.Types.Options do
 
   defp validate_can_use_tool(other),
     do: {:error, "can_use_tool must be nil or a function of arity 2 or 3, got: #{inspect(other)}"}
+
+  defp validate_timeout(_field, ms) when is_integer(ms) and ms > 0, do: :ok
+
+  defp validate_timeout(field, ms),
+    do: {:error, "#{field} must be a positive integer, got: #{inspect(ms)}"}
+
+  defp validate_session_options(%{continue: true, resume: resume}) when is_binary(resume),
+    do:
+      {:error,
+       "cannot set both continue: true and resume: #{inspect(resume)} — use one or the other"}
+
+  defp validate_session_options(_), do: :ok
+
+  defp validate_permission_options(%{can_use_tool: callback, permission_prompt_tool_name: name})
+       when is_function(callback) and is_binary(name),
+       do:
+         {:error,
+          "cannot set both can_use_tool and permission_prompt_tool_name — use one or the other"}
+
+  defp validate_permission_options(_), do: :ok
 end
