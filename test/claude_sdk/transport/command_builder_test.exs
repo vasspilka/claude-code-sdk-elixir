@@ -230,13 +230,17 @@ defmodule ClaudeSDK.Transport.CommandBuilderTest do
       assert_flag(args, "--fallback-model", "claude-haiku-4-5-20251001")
     end
 
-    test "adds --thinking as encoded JSON" do
+    test "adds --thinking as plain string and --max-thinking-tokens for budget" do
       thinking = %{"type" => "adaptive", "budget_tokens" => 5000}
       args = CommandBuilder.build_args(%Options{thinking: thinking})
 
       idx = Enum.find_index(args, &(&1 == "--thinking"))
       assert idx != nil
-      assert {:ok, ^thinking} = Jason.decode(Enum.at(args, idx + 1))
+      assert Enum.at(args, idx + 1) == "adaptive"
+
+      tokens_idx = Enum.find_index(args, &(&1 == "--max-thinking-tokens"))
+      assert tokens_idx != nil
+      assert Enum.at(args, tokens_idx + 1) == "5000"
     end
 
     test "output_format with json_schema type extracts schema into --json-schema" do
@@ -267,13 +271,18 @@ defmodule ClaudeSDK.Transport.CommandBuilderTest do
       assert json_schema_idx != nil
     end
 
-    test "adds --sandbox as encoded JSON" do
-      sandbox = %{"enabled" => true, "permissions" => ["read"]}
+    test "sandbox is merged into --settings" do
+      sandbox = %{"enabled" => true}
       args = CommandBuilder.build_args(%Options{sandbox: sandbox})
 
-      idx = Enum.find_index(args, &(&1 == "--sandbox"))
+      # Sandbox should NOT appear as --sandbox
+      refute "--sandbox" in args
+
+      # Sandbox should be merged into --settings
+      idx = Enum.find_index(args, &(&1 == "--settings"))
       assert idx != nil
-      assert {:ok, ^sandbox} = Jason.decode(Enum.at(args, idx + 1))
+      {:ok, settings} = Jason.decode(Enum.at(args, idx + 1))
+      assert settings["sandbox"] == %{"enabled" => true}
     end
 
     test "adds repeated --beta flags" do
@@ -314,7 +323,7 @@ defmodule ClaudeSDK.Transport.CommandBuilderTest do
       env = CommandBuilder.build_env(%Options{})
 
       assert {"CLAUDE_CODE_ENTRYPOINT", "sdk-elixir"} in env
-      assert {"CLAUDE_AGENT_SDK_VERSION", "0.1.0"} in env
+      assert {"CLAUDE_AGENT_SDK_VERSION", "0.2.0"} in env
     end
 
     test "includes user-provided env vars" do

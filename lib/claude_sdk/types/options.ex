@@ -318,7 +318,8 @@ defmodule ClaudeSDK.Types.Options do
          :ok <- validate_timeout(:message_timeout_ms, opts.message_timeout_ms),
          :ok <- validate_timeout(:control_timeout_ms, opts.control_timeout_ms),
          :ok <- validate_session_options(opts),
-         :ok <- validate_permission_options(opts) do
+         :ok <- validate_permission_options(opts),
+         :ok <- validate_output_options(opts) do
       :ok
     end
   end
@@ -374,4 +375,14 @@ defmodule ClaudeSDK.Types.Options do
             "when can_use_tool is set, the SDK auto-configures permission_prompt_tool_name to \"stdio\""}
 
   defp validate_permission_options(_), do: :ok
+
+  defp validate_output_options(%{json_schema: schema, output_format: format})
+       when not is_nil(schema) and not is_nil(format),
+       do:
+         {:error,
+          "cannot set both json_schema and output_format — " <>
+            "json_schema constrains the model's text response, " <>
+            "output_format controls the CLI's output structure. Use one or the other."}
+
+  defp validate_output_options(_), do: :ok
 end

@@ -228,6 +228,118 @@ defmodule ClaudeSDK.ControlRouterTest do
     end
   end
 
+  describe "hook callback handling" do
+    test "registers hook_callback handler when hooks are non-empty" do
+      hooks = %{"PreToolUse" => [fn _input -> :ok end]}
+
+      handlers =
+        ControlRouter.build_handlers(%{can_use_tool: nil, mcp_tool_index: %{}, hooks: hooks})
+
+      assert Map.has_key?(handlers, "hook_callback")
+    end
+
+    test "does not register hook_callback handler when hooks are empty" do
+      handlers =
+        ControlRouter.build_handlers(%{can_use_tool: nil, mcp_tool_index: %{}, hooks: %{}})
+
+      refute Map.has_key?(handlers, "hook_callback")
+    end
+
+    test "multiple hook callbacks merge their results" do
+      hooks = %{
+        "PreToolUse" => [
+          fn _input -> {:ok, %{a: 1}} end,
+          fn _input -> {:ok, %{b: 2}} end
+        ]
+      }
+
+      handlers =
+        ControlRouter.build_handlers(%{can_use_tool: nil, mcp_tool_index: %{}, hooks: hooks})
+
+      raw = %{
+        "type" => "control_request",
+        "request_id" => "req_hook",
+        "request" => %{
+          "subtype" => "hook_callback",
+          "hook_event" => "PreToolUse",
+          "hook_input" => %{}
+        }
+      }
+
+      assert {:handled, response} = ControlRouter.dispatch(raw, handlers)
+      assert response.response.a == 1
+      assert response.response.b == 2
+    end
+
+    @tag :capture_log
+    test "hook callback that raises does not crash the router" do
+      hooks = %{"PreToolUse" => [fn _input -> raise "hook boom" end]}
+
+      handlers =
+        ControlRouter.build_handlers(%{can_use_tool: nil, mcp_tool_index: %{}, hooks: hooks})
+
+      raw = %{
+        "type" => "control_request",
+        "request_id" => "req_hook_crash",
+        "request" => %{
+          "subtype" => "hook_callback",
+          "hook_event" => "PreToolUse",
+          "hook_input" => %{}
+        }
+      }
+
+      assert {:handled, response} = ControlRouter.dispatch(raw, handlers)
+      assert response.type == "control_response"
+    end
+
+    test "hook for unregistered event returns empty result" do
+      hooks = %{"PreToolUse" => [fn _input -> {:ok, %{called: true}} end]}
+
+      handlers =
+        ControlRouter.build_handlers(%{can_use_tool: nil, mcp_tool_index: %{}, hooks: hooks})
+
+      raw = %{
+        "type" => "control_request",
+        "request_id" => "req_no_hook",
+        "request" => %{
+          "subtype" => "hook_callback",
+          "hook_event" => "PostToolUse",
+          "hook_input" => %{}
+        }
+      }
+
+      assert {:handled, response} = ControlRouter.dispatch(raw, handlers)
+      assert response.response == %{}
+    end
+
+    test "arity-2 hook callback receives event and input" do
+      test_pid = self()
+
+      hooks = %{
+        "Notification" => fn event, input ->
+          send(test_pid, {:hook_called, event, input})
+          :ok
+        end
+      }
+
+      handlers =
+        ControlRouter.build_handlers(%{can_use_tool: nil, mcp_tool_index: %{}, hooks: hooks})
+
+      raw = %{
+        "type" => "control_request",
+        "request_id" => "req_arity2",
+        "request" => %{
+          "subtype" => "hook_callback",
+          "hook_event" => "Notification",
+          "hook_input" => %{"message" => "hi"}
+        }
+      }
+
+      assert {:handled, _response} = ControlRouter.dispatch(raw, handlers)
+      assert_receive {:hook_called, "Notification", %{"message" => "hi"}}
+    end
+  end
+
   describe "handler crash safety" do
     @tag :capture_log
     test "handler raising an exception returns error response instead of crashing" do

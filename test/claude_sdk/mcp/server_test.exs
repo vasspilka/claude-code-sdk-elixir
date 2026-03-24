@@ -43,19 +43,10 @@ defmodule ClaudeSDK.MCP.ServerTest do
 
       server_config = servers["my-server"]
       assert server_config["type"] == "sdk"
-      assert server_config["version"] == "2.0"
-      assert length(server_config["tools"]) == 2
-    end
-
-    test "strips handler functions from tool configs" do
-      server = Server.create("s", "1.0", test_tools())
-      config = Server.to_cli_config([server])
-
-      tool = hd(config["mcpServers"]["s"]["tools"])
-      assert Map.has_key?(tool, "name")
-      assert Map.has_key?(tool, "description")
-      assert Map.has_key?(tool, "inputSchema")
-      refute Map.has_key?(tool, "handler")
+      assert server_config["name"] == "my-server"
+      # Tools and version are NOT included in CLI config — they're served at runtime
+      refute Map.has_key?(server_config, "tools")
+      refute Map.has_key?(server_config, "version")
     end
 
     test "handles multiple servers" do
@@ -67,13 +58,12 @@ defmodule ClaudeSDK.MCP.ServerTest do
       assert Map.has_key?(config["mcpServers"], "server-b")
     end
 
-    test "preserves input schema" do
+    test "CLI config only contains type and name" do
       server = Server.create("s", "1.0", test_tools())
       config = Server.to_cli_config([server])
 
-      greet_tool = Enum.find(config["mcpServers"]["s"]["tools"], &(&1["name"] == "greet"))
-      assert greet_tool["inputSchema"]["type"] == "object"
-      assert Map.has_key?(greet_tool["inputSchema"]["properties"], "name")
+      server_config = config["mcpServers"]["s"]
+      assert Map.keys(server_config) |> Enum.sort() == ["name", "type"]
     end
   end
 
@@ -249,6 +239,50 @@ defmodule ClaudeSDK.MCP.ServerTest do
 
       assert {:result, response} = Server.handle_jsonrpc("test-server", jsonrpc, index)
       assert response.jsonrpc_response["error"]["code"] == -32601
+    end
+
+    @tag :capture_log
+    test "handler raising an exception returns error result instead of crashing" do
+      crashing_tool = %Tool{
+        name: "crasher",
+        description: "Always crashes",
+        input_schema: %{},
+        handler: fn _args -> raise "kaboom" end
+      }
+
+      server = Server.create("crash-server", "1.0", [crashing_tool])
+      index = Server.build_tool_index([server])
+
+      jsonrpc = %{
+        "jsonrpc" => "2.0",
+        "id" => 100,
+        "method" => "tools/call",
+        "params" => %{"name" => "crasher", "arguments" => %{}}
+      }
+
+      assert {:result, response} = Server.handle_jsonrpc("crash-server", jsonrpc, index)
+      assert response.jsonrpc_response["result"]["isError"] == true
+
+      [content] = response.jsonrpc_response["result"]["content"]
+      assert content["text"] =~ "Tool handler error: kaboom"
+    end
+
+    test "JSONRPC notification (no id) returns empty result" do
+      index = Server.build_tool_index([Server.create("s", "1.0", test_tools())])
+
+      # JSONRPC notification — valid, but no response expected
+      jsonrpc = %{"jsonrpc" => "2.0", "method" => "notifications/initialized"}
+
+      assert {:result, response} = Server.handle_jsonrpc("s", jsonrpc, index)
+      assert response == %{}
+    end
+
+    @tag :capture_log
+    test "completely empty JSONRPC message returns empty result" do
+      index = Server.build_tool_index([Server.create("s", "1.0", test_tools())])
+
+      assert {:result, response} = Server.handle_jsonrpc("s", %{}, index)
+      assert response == %{}
     end
 
     @tag :capture_log

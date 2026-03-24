@@ -57,19 +57,12 @@ defmodule ClaudeSDK.MCP.Server do
   def to_cli_config(servers) when is_list(servers) do
     mcpServers =
       Map.new(servers, fn server ->
-        tools =
-          Enum.map(server.tools, fn tool ->
-            %{
-              "name" => tool.name,
-              "description" => tool.description,
-              "inputSchema" => tool.input_schema
-            }
-          end)
-
+        # The CLI only accepts {"type": "sdk", "name": "<name>"} for SDK servers.
+        # Tools and version are NOT sent in the config — the CLI discovers tools
+        # at runtime via mcp_message control requests (tools/list, tools/call).
         config = %{
           "type" => "sdk",
-          "version" => server.version,
-          "tools" => tools
+          "name" => server.name
         }
 
         {server.name, config}
@@ -129,30 +122,49 @@ defmodule ClaudeSDK.MCP.Server do
          }}
 
       %Tool{handler: handler} ->
-        case handler.(arguments) do
-          {:ok, result} ->
-            content = format_result(result)
+        try do
+          case handler.(arguments) do
+            {:ok, result} ->
+              content = format_result(result)
 
-            {:result,
-             %{
-               jsonrpc_response: %{
-                 "jsonrpc" => "2.0",
-                 "id" => id,
-                 "result" => %{
-                   "content" => content,
-                   "isError" => false
+              {:result,
+               %{
+                 jsonrpc_response: %{
+                   "jsonrpc" => "2.0",
+                   "id" => id,
+                   "result" => %{
+                     "content" => content,
+                     "isError" => false
+                   }
                  }
-               }
-             }}
+               }}
 
-          {:error, reason} ->
+            {:error, reason} ->
+              {:result,
+               %{
+                 jsonrpc_response: %{
+                   "jsonrpc" => "2.0",
+                   "id" => id,
+                   "result" => %{
+                     "content" => [%{"type" => "text", "text" => to_string(reason)}],
+                     "isError" => true
+                   }
+                 }
+               }}
+          end
+        rescue
+          e ->
+            Logger.warning("MCP tool handler for #{tool_name} raised: #{Exception.message(e)}")
+
             {:result,
              %{
                jsonrpc_response: %{
                  "jsonrpc" => "2.0",
                  "id" => id,
                  "result" => %{
-                   "content" => [%{"type" => "text", "text" => to_string(reason)}],
+                   "content" => [
+                     %{"type" => "text", "text" => "Tool handler error: #{Exception.message(e)}"}
+                   ],
                    "isError" => true
                  }
                }
@@ -195,6 +207,18 @@ defmodule ClaudeSDK.MCP.Server do
          }
        }
      }}
+  end
+
+  # JSONRPC notifications (no "id" field) are valid — they don't expect a response.
+  # Return an empty result so the ControlRouter sends a benign response back.
+  def handle_jsonrpc(_server_name, %{"method" => _method}, _tool_index) do
+    {:result, %{}}
+  end
+
+  # Catch-all for other messages (e.g. MCP protocol handshake messages)
+  def handle_jsonrpc(_server_name, _message, _tool_index) do
+    Logger.debug("Received unrecognized JSONRPC message (no 'id' or 'method' field)")
+    {:result, %{}}
   end
 
   # 1 MB size limit for MCP results

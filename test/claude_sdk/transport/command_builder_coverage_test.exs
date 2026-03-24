@@ -34,28 +34,43 @@ defmodule ClaudeSDK.Transport.CommandBuilderCoverageTest do
   end
 
   describe "ThinkingConfig struct" do
-    test "adds --thinking as encoded JSON from ThinkingConfig struct" do
+    test "adds --thinking as plain string and --max-thinking-tokens from ThinkingConfig struct" do
       config = %ClaudeSDK.Types.ThinkingConfig{type: "adaptive", budget_tokens: 5000}
       args = CommandBuilder.build_args(%Options{thinking: config})
 
       idx = Enum.find_index(args, &(&1 == "--thinking"))
       assert idx != nil
-      {:ok, parsed} = Jason.decode(Enum.at(args, idx + 1))
-      assert parsed["type"] == "adaptive"
-      assert parsed["budget_tokens"] == 5000
+      assert Enum.at(args, idx + 1) == "adaptive"
+
+      tokens_idx = Enum.find_index(args, &(&1 == "--max-thinking-tokens"))
+      assert tokens_idx != nil
+      assert Enum.at(args, tokens_idx + 1) == "5000"
+    end
+
+    test "thinking disabled does not add --max-thinking-tokens" do
+      config = %ClaudeSDK.Types.ThinkingConfig{type: "disabled"}
+      args = CommandBuilder.build_args(%Options{thinking: config})
+
+      idx = Enum.find_index(args, &(&1 == "--thinking"))
+      assert idx != nil
+      assert Enum.at(args, idx + 1) == "disabled"
+
+      refute Enum.any?(args, &(&1 == "--max-thinking-tokens"))
     end
   end
 
   describe "SandboxSettings struct" do
-    test "adds --sandbox as encoded JSON from SandboxSettings struct" do
+    test "sandbox is merged into --settings from SandboxSettings struct" do
       settings = %ClaudeSDK.Types.SandboxSettings{enabled: true, network: "deny"}
       args = CommandBuilder.build_args(%Options{sandbox: settings})
 
-      idx = Enum.find_index(args, &(&1 == "--sandbox"))
+      refute "--sandbox" in args
+
+      idx = Enum.find_index(args, &(&1 == "--settings"))
       assert idx != nil
       {:ok, parsed} = Jason.decode(Enum.at(args, idx + 1))
-      assert parsed["enabled"] == true
-      assert parsed["network"] == "deny"
+      assert parsed["sandbox"]["enabled"] == true
+      assert parsed["sandbox"]["network"] == "deny"
     end
   end
 

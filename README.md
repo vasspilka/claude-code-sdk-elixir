@@ -32,7 +32,7 @@ Add `claude_sdk` to your dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:claude_sdk, "~> 0.1.0"}
+    {:claude_sdk, "~> 0.2.0"}
   ]
 end
 ```

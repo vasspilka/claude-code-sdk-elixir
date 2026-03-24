@@ -210,16 +210,22 @@ defmodule ClaudeSDK.ControlRouter do
   defp maybe_add_hook_handler(handlers, _opts), do: handlers
 
   defp run_hook_callbacks(callbacks, hook_event, hook_input) do
-    Enum.reduce(callbacks, {:result, %{}}, fn callback, _acc ->
-      cond do
-        is_function(callback, 1) ->
-          run_single_hook_callback(callback, hook_event, hook_input)
+    Enum.reduce(callbacks, {:result, %{}}, fn callback, acc ->
+      result =
+        cond do
+          is_function(callback, 1) ->
+            run_single_hook_callback(callback, hook_event, hook_input)
 
-        is_function(callback, 2) ->
-          run_single_hook_callback_2(callback, hook_event, hook_input)
+          is_function(callback, 2) ->
+            run_single_hook_callback_2(callback, hook_event, hook_input)
 
-        true ->
-          {:result, %{}}
+          true ->
+            {:result, %{}}
+        end
+
+      case {acc, result} do
+        {{:result, prev}, {:result, next}} -> {:result, Map.merge(prev, next)}
+        {_, latest} -> latest
       end
     end)
   end

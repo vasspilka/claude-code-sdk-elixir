@@ -70,5 +70,75 @@ defmodule ClaudeSDK.OptionsTest do
       opts = %Options{max_turns: -1, permission_mode: :invalid}
       assert {:error, _msg} = Options.validate(opts)
     end
+
+    test "validates can_use_tool must be nil or function" do
+      assert {:error, msg} = Options.validate(%Options{can_use_tool: "not_a_function"})
+      assert msg =~ "can_use_tool must be nil or a function"
+    end
+
+    test "accepts can_use_tool arity-2 callback" do
+      assert :ok = Options.validate(%Options{can_use_tool: fn _t, _i -> :allow end})
+    end
+
+    test "accepts can_use_tool arity-3 callback" do
+      assert :ok = Options.validate(%Options{can_use_tool: fn _t, _i, _c -> :allow end})
+    end
+
+    test "rejects both can_use_tool and permission_prompt_tool_name" do
+      opts = %Options{
+        can_use_tool: fn _t, _i -> :allow end,
+        permission_prompt_tool_name: "my-tool"
+      }
+
+      assert {:error, msg} = Options.validate(opts)
+      assert msg =~ "cannot set both can_use_tool and permission_prompt_tool_name"
+    end
+
+    test "rejects both continue and resume" do
+      opts = %Options{continue: true, resume: "session-123"}
+      assert {:error, msg} = Options.validate(opts)
+      assert msg =~ "cannot set both continue: true and resume:"
+    end
+
+    test "rejects both json_schema and output_format" do
+      opts = %Options{
+        json_schema: %{"type" => "object"},
+        output_format: %{"type" => "object"}
+      }
+
+      assert {:error, msg} = Options.validate(opts)
+      assert msg =~ "cannot set both json_schema and output_format"
+    end
+
+    test "accepts json_schema alone" do
+      assert :ok = Options.validate(%Options{json_schema: %{"type" => "object"}})
+    end
+
+    test "accepts output_format alone" do
+      assert :ok = Options.validate(%Options{output_format: %{"type" => "object"}})
+    end
+
+    test "validates init_timeout_ms must be positive" do
+      assert {:error, msg} = Options.validate(%Options{init_timeout_ms: 0})
+      assert msg =~ "init_timeout_ms must be a positive integer"
+    end
+
+    test "validates message_timeout_ms must be positive" do
+      assert {:error, msg} = Options.validate(%Options{message_timeout_ms: -1})
+      assert msg =~ "message_timeout_ms must be a positive integer"
+    end
+
+    test "validates control_timeout_ms must be positive" do
+      assert {:error, msg} = Options.validate(%Options{control_timeout_ms: 0})
+      assert msg =~ "control_timeout_ms must be a positive integer"
+    end
+  end
+
+  describe "query/2 keyword list conversion" do
+    test "rejects unknown keyword keys" do
+      assert_raise ArgumentError, ~r/unknown options/, fn ->
+        ClaudeSDK.query("hello", bogus_key: true)
+      end
+    end
   end
 end

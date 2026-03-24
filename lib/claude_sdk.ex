@@ -209,6 +209,7 @@ defmodule ClaudeSDK do
   end
 
   # Stream.resource next_fun: receive and parse messages
+  defp receive_messages({:halt, state}), do: {:halt, state}
   defp receive_messages(:halt), do: {:halt, :done}
 
   defp receive_messages(
@@ -235,7 +236,7 @@ defmodule ClaudeSDK do
       {:claude_message, raw} ->
         case MessageParser.parse(raw) do
           {:ok, %ClaudeSDK.Types.ResultMessage{} = msg} ->
-            {[msg], :halt}
+            {[msg], {:halt, state}}
 
           {:ok, msg} ->
             {[msg], state}

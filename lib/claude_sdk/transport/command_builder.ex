@@ -37,7 +37,7 @@ defmodule ClaudeSDK.Transport.CommandBuilder do
     |> maybe_add_list("--disallowed-tools", opts.disallowed_tools)
     |> maybe_add("--max-turns", opts.max_turns)
     |> maybe_add("--max-budget-usd", opts.max_budget_usd)
-    |> maybe_add("--max-thinking-tokens", opts.max_thinking_tokens)
+    |> add_max_thinking_tokens(opts.max_thinking_tokens, opts.thinking)
     |> add_permission_mode(opts.permission_mode)
     |> add_permission_prompt_tool(opts.can_use_tool, opts.permission_prompt_tool_name)
     |> maybe_add_flag("--continue", opts.continue)
@@ -45,11 +45,10 @@ defmodule ClaudeSDK.Transport.CommandBuilder do
     |> maybe_add_flag("--fork-session", opts.fork_session)
     |> maybe_add_flag("--include-partial-messages", opts.include_partial_messages)
     |> maybe_add("--effort", opts.effort)
-    |> add_json_opt("--thinking", opts.thinking)
+    |> add_thinking(opts.thinking)
     |> add_json_opt("--json-schema", opts.json_schema)
-    |> add_json_opt("--settings", opts.settings)
+    |> add_settings(opts.settings, opts.sandbox)
     |> maybe_add_list("--setting-sources", opts.setting_sources)
-    |> add_json_opt("--sandbox", opts.sandbox)
     |> add_output_format(opts.output_format)
     |> add_repeated("--beta", opts.betas || [])
     |> maybe_add("--user", opts.user)
@@ -139,6 +138,72 @@ defmodule ClaudeSDK.Transport.CommandBuilder do
     do: args ++ [flag, Jason.encode!(ClaudeSDK.Types.SandboxSettings.to_map(settings))]
 
   defp add_json_opt(args, flag, map) when is_map(map), do: args ++ [flag, Jason.encode!(map)]
+
+  # Only add standalone --max-thinking-tokens when thinking config is not set
+  # (thinking config handles its own budget_tokens via add_thinking)
+  defp add_max_thinking_tokens(args, nil, _thinking), do: args
+  defp add_max_thinking_tokens(args, _tokens, thinking) when not is_nil(thinking), do: args
+
+  defp add_max_thinking_tokens(args, tokens, _thinking),
+    do: args ++ ["--max-thinking-tokens", to_string(tokens)]
+
+  # The CLI --thinking flag expects a plain string: "enabled", "adaptive", or "disabled".
+  # budget_tokens is passed via --max-thinking-tokens separately.
+  defp add_thinking(args, nil), do: args
+
+  defp add_thinking(args, %ClaudeSDK.Types.ThinkingConfig{} = config) do
+    args = args ++ ["--thinking", config.type]
+
+    case config.budget_tokens do
+      nil -> args
+      tokens -> args ++ ["--max-thinking-tokens", to_string(tokens)]
+    end
+  end
+
+  defp add_thinking(args, %{"type" => type} = config) do
+    args = args ++ ["--thinking", type]
+
+    case config["budget_tokens"] do
+      nil -> args
+      tokens -> args ++ ["--max-thinking-tokens", to_string(tokens)]
+    end
+  end
+
+  defp add_thinking(args, _), do: args
+
+  # Build unified --settings from opts.settings and opts.sandbox.
+  # Sandbox is merged into settings (not a standalone CLI flag).
+  defp add_settings(args, nil, nil), do: args
+
+  defp add_settings(args, settings, sandbox) do
+    base =
+      case settings do
+        nil -> %{}
+        m when is_map(m) -> m
+        s when is_binary(s) -> %{"_raw" => s}
+      end
+
+    merged =
+      case sandbox do
+        nil ->
+          base
+
+        %ClaudeSDK.Types.SandboxSettings{} = s ->
+          Map.put(base, "sandbox", ClaudeSDK.Types.SandboxSettings.to_map(s))
+
+        s when is_map(s) ->
+          Map.put(base, "sandbox", s)
+      end
+
+    if map_size(merged) == 0 do
+      args
+    else
+      case merged do
+        %{"_raw" => raw} when map_size(merged) == 1 -> args ++ ["--settings", raw]
+        _ -> args ++ ["--settings", Jason.encode!(Map.delete(merged, "_raw"))]
+      end
+    end
+  end
 
   defp add_output_format(args, nil), do: args
 
