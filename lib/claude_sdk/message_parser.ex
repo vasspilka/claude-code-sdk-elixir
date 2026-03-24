@@ -94,7 +94,7 @@ defmodule ClaudeSDK.MessageParser do
 
     %UserMessage{
       message: %{role: :user, content: message["content"] || ""},
-      session_id: raw["session_id"] || "default",
+      session_id: raw["session_id"],
       uuid: raw["uuid"],
       parent_tool_use_id: raw["parent_tool_use_id"]
     }

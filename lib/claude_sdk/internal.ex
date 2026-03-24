@@ -78,7 +78,8 @@ defmodule ClaudeSDK.Internal do
     handler_opts = %{
       can_use_tool: opts.can_use_tool,
       mcp_tool_index: mcp_tool_index,
-      hooks: opts.hooks
+      hooks: opts.hooks,
+      hook_timeout_ms: opts.hook_timeout_ms
     }
 
     ClaudeSDK.ControlRouter.build_handlers(handler_opts)

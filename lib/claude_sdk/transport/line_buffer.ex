@@ -24,6 +24,42 @@ defmodule ClaudeSDK.Transport.LineBuffer do
   def new, do: %__MODULE__{}
 
   @doc """
+  Accumulate a partial chunk (from a Port `:noeol` message).
+
+  Returns the updated buffer. No messages are extracted — partial chunks
+  are accumulated until `flush/2` is called with the final `:eol` data.
+  """
+  @spec accumulate(t(), String.t()) :: t()
+  def accumulate(%__MODULE__{buffer: buf}, chunk) when is_binary(chunk) do
+    full = buf <> chunk
+
+    if byte_size(full) > @max_buffer_bytes do
+      Logger.warning(
+        "LineBuffer exceeded #{div(@max_buffer_bytes, 1_048_576)}MB limit " <>
+          "(#{byte_size(full)} bytes), discarding buffer"
+      )
+
+      %__MODULE__{buffer: ""}
+    else
+      %__MODULE__{buffer: full}
+    end
+  end
+
+  @doc """
+  Flush the buffer with the final `:eol` remainder and parse the complete line.
+
+  Concatenates any buffered partial data with the `:eol` remainder, attempts
+  JSON parsing, and resets the buffer.
+
+  Returns `{new_buffer, {:ok, parsed_map} | {:error, reason}}`.
+  """
+  @spec flush(t(), String.t()) :: {t(), {:ok, map()} | {:error, term()}}
+  def flush(%__MODULE__{buffer: buf}, eol_data) when is_binary(eol_data) do
+    full_line = if buf == "", do: eol_data, else: buf <> eol_data
+    {new(), parse_line(full_line)}
+  end
+
+  @doc """
   Append data to the buffer and extract any complete JSON messages.
 
   Returns `{updated_buffer, parsed_messages}` where `parsed_messages` is a

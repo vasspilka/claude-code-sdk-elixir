@@ -79,11 +79,20 @@ defmodule ClaudeSDK.MCP.Server do
   """
   @spec build_tool_index([map()]) :: %{{String.t(), String.t()} => Tool.t()}
   def build_tool_index(servers) when is_list(servers) do
-    for server <- servers,
-        tool <- server.tools,
-        into: %{} do
-      {{server.name, tool.name}, tool}
-    end
+    Enum.reduce(servers, %{}, fn server, acc ->
+      Enum.reduce(server.tools, acc, fn tool, inner_acc ->
+        key = {server.name, tool.name}
+
+        if Map.has_key?(inner_acc, key) do
+          Logger.warning(
+            "MCP tool name collision: tool #{inspect(tool.name)} on server " <>
+              "#{inspect(server.name)} is already registered — overwriting previous definition"
+          )
+        end
+
+        Map.put(inner_acc, key, tool)
+      end)
+    end)
   end
 
   @doc """

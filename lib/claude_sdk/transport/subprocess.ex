@@ -48,7 +48,7 @@ defmodule ClaudeSDK.Transport.Subprocess do
   @doc "Send a map as a JSON line to the CLI's stdin."
   @spec send_message(GenServer.server(), map()) :: :ok
   def send_message(server, message) when is_map(message) do
-    GenServer.call(server, {:send, message})
+    GenServer.cast(server, {:send, message})
   end
 
   @doc "Gracefully stop the subprocess."
@@ -155,47 +155,37 @@ defmodule ClaudeSDK.Transport.Subprocess do
   end
 
   @impl true
-  def handle_call({:send, message}, _from, %{port: port} = state) do
+  def handle_cast({:send, message}, %{port: port} = state) do
     json = Jason.encode!(message) <> "\n"
     Port.command(port, json)
-    {:reply, :ok, state}
+    {:noreply, state}
   end
 
   @impl true
   def handle_info({port, {:data, {:eol, line}}}, %{port: port} = state) do
     # When a line exceeds the Port's {:line, N} limit, it arrives as
     # one or more {:noeol, chunk} messages followed by a final {:eol, remainder}.
-    # Combine any buffered noeol chunks with this eol remainder.
-    full_line =
-      if state.buffer.buffer == "" do
-        line
-      else
-        state.buffer.buffer <> line
-      end
+    # flush/2 concatenates any buffered noeol chunks with this eol remainder.
+    {new_buffer, result} = LineBuffer.flush(state.buffer, line)
 
-    case LineBuffer.parse_line(full_line) do
+    case result do
       {:ok, parsed} ->
         send(state.caller, {:claude_message, parsed})
-        {:noreply, %{state | buffer: LineBuffer.new()}}
 
       {:error, _} ->
+        full_line = if state.buffer.buffer == "", do: line, else: state.buffer.buffer <> line
+
         Logger.debug(
           "Skipping non-JSON line from CLI: #{inspect(String.slice(full_line, 0, 200))}"
         )
-
-        {:noreply, %{state | buffer: LineBuffer.new()}}
-    end
-  end
-
-  def handle_info({port, {:data, {:noeol, chunk}}}, %{port: port} = state) do
-    # Partial line — accumulate in buffer
-    {new_buffer, messages} = LineBuffer.append(state.buffer, chunk)
-
-    for msg <- messages do
-      send(state.caller, {:claude_message, msg})
     end
 
     {:noreply, %{state | buffer: new_buffer}}
+  end
+
+  def handle_info({port, {:data, {:noeol, chunk}}}, %{port: port} = state) do
+    # Partial line — accumulate in buffer until the final :eol arrives
+    {:noreply, %{state | buffer: LineBuffer.accumulate(state.buffer, chunk)}}
   end
 
   def handle_info({port, {:exit_status, 0}}, %{port: port} = state) do

@@ -457,7 +457,7 @@ All options available in `ClaudeSDK.Types.Options`:
 | **Permissions** | |
 | `permission_mode` | `:default`, `:accept_edits`, `:plan`, or `:bypass_permissions` |
 | **Session** | |
-| `session_id` | Session identifier (default: `"default"`) |
+| `session_id` | Session identifier (default: `nil`, CLI auto-generates) |
 | `continue` | Continue the most recent session |
 | `resume` | Resume a specific session by ID |
 | `fork_session` | Fork the current session (branch off) |
@@ -497,8 +497,10 @@ All options available in `ClaudeSDK.Types.Options`:
 | `init_timeout_ms` | Initialization timeout (default: 30s) |
 | `message_timeout_ms` | Message receive timeout (default: 120s) |
 | `control_timeout_ms` | Control request/response timeout (default: 30s) |
+| `hook_timeout_ms` | Individual hook callback timeout (default: 30s) |
 | **Advanced** | |
 | `cli_path` | Override the auto-discovered CLI binary path |
+| `log_file` | Path for CLI log output (captures stderr/logs) |
 | `extra_args` | Escape hatch: additional raw CLI argument strings |
 
 ## Guides
@@ -548,9 +550,7 @@ ClaudeSDK.query("Complex task", %Options{
 Erlang ports only capture stdout. CLI stderr output (logs, warnings) is not captured by the SDK. To capture CLI logs, redirect them to a file:
 
 ```elixir
-ClaudeSDK.query("Hello", %Options{
-  extra_args: ["--log-file", "/tmp/claude.log"]
-})
+ClaudeSDK.query("Hello", %Options{log_file: "/tmp/claude.log"})
 ```
 
 ### Concurrent queries on Client

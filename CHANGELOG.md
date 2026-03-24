@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-03-25
+
+### Added
+
+- `log_file` option for capturing CLI log output (maps to `--log-file`), replacing the need for `extra_args`
+- `hook_timeout_ms` option (default 30s) — hook callbacks are now executed with a timeout via `Task.async`/`Task.yield`; hanging hooks no longer block the stream
+- MCP tool name collision warning — `build_tool_index` now logs a warning when two servers register the same tool name
+
+### Changed
+
+- **Breaking:** `session_id` default changed from `"default"` to `nil` — the CLI now auto-generates session IDs instead of all queries sharing a single `"default"` session. Set `session_id` explicitly to preserve the old behavior.
+- `Subprocess.send_message/2` changed from `GenServer.call` to `GenServer.cast` to prevent potential deadlock when the subprocess mailbox is backed up
+
 ### Fixed
 
 - MCP server CLI config now only sends `type` and `name` (CLI discovers tools at runtime via control requests)
@@ -17,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - MCP tool handlers wrapped in try/rescue to return error results instead of crashing
 - Added catch-all clauses for JSONRPC notifications and unrecognized messages
 - Validation preventing both `json_schema` and `output_format` from being set simultaneously
+- Unified line buffer handling in `Subprocess` — `:eol` and `:noeol` Port messages now both route through `LineBuffer` instead of using two parallel buffering paths
 
 ### Improved
 

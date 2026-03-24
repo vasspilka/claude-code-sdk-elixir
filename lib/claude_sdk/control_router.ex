@@ -180,8 +180,10 @@ defmodule ClaudeSDK.ControlRouter do
 
   defp maybe_add_mcp_handler(handlers, _opts), do: handlers
 
-  defp maybe_add_hook_handler(handlers, %{hooks: hooks})
+  defp maybe_add_hook_handler(handlers, %{hooks: hooks} = opts)
        when is_map(hooks) and map_size(hooks) > 0 do
+    timeout = Map.get(opts, :hook_timeout_ms, 30_000)
+
     handler = fn request ->
       hook_event = request["hook_event"] || ""
       hook_input = request["hook_input"] || %{}
@@ -191,13 +193,13 @@ defmodule ClaudeSDK.ControlRouter do
           {:result, %{}}
 
         hook_callbacks when is_list(hook_callbacks) ->
-          run_hook_callbacks(hook_callbacks, hook_event, hook_input)
+          run_hook_callbacks(hook_callbacks, hook_event, hook_input, timeout)
 
         hook_callback when is_function(hook_callback, 1) ->
-          run_single_hook_callback(hook_callback, hook_event, hook_input)
+          run_single_hook_callback(hook_callback, hook_event, hook_input, timeout)
 
         hook_callback when is_function(hook_callback, 2) ->
-          run_single_hook_callback_2(hook_callback, hook_event, hook_input)
+          run_single_hook_callback_2(hook_callback, hook_event, hook_input, timeout)
 
         _ ->
           {:result, %{}}
@@ -209,15 +211,15 @@ defmodule ClaudeSDK.ControlRouter do
 
   defp maybe_add_hook_handler(handlers, _opts), do: handlers
 
-  defp run_hook_callbacks(callbacks, hook_event, hook_input) do
+  defp run_hook_callbacks(callbacks, hook_event, hook_input, timeout) do
     Enum.reduce(callbacks, {:result, %{}}, fn callback, acc ->
       result =
         cond do
           is_function(callback, 1) ->
-            run_single_hook_callback(callback, hook_event, hook_input)
+            run_single_hook_callback(callback, hook_event, hook_input, timeout)
 
           is_function(callback, 2) ->
-            run_single_hook_callback_2(callback, hook_event, hook_input)
+            run_single_hook_callback_2(callback, hook_event, hook_input, timeout)
 
           true ->
             {:result, %{}}
@@ -230,31 +232,55 @@ defmodule ClaudeSDK.ControlRouter do
     end)
   end
 
-  defp run_single_hook_callback(callback, _hook_event, hook_input) do
-    case callback.(hook_input) do
-      :ok -> {:result, %{}}
-      {:ok, result} when is_map(result) -> {:result, result}
-      {:result, result} when is_map(result) -> {:result, result}
-      _ -> {:result, %{}}
-    end
-  rescue
-    e ->
-      Logger.warning("Hook callback raised: #{Exception.message(e)}")
-      {:result, %{}}
+  defp run_single_hook_callback(callback, _hook_event, hook_input, timeout) do
+    run_with_timeout(fn -> callback.(hook_input) end, timeout)
   end
 
-  defp run_single_hook_callback_2(callback, hook_event, hook_input) do
-    case callback.(hook_event, hook_input) do
-      :ok -> {:result, %{}}
-      {:ok, result} when is_map(result) -> {:result, result}
-      {:result, result} when is_map(result) -> {:result, result}
-      _ -> {:result, %{}}
-    end
-  rescue
-    e ->
-      Logger.warning("Hook callback raised: #{Exception.message(e)}")
-      {:result, %{}}
+  defp run_single_hook_callback_2(callback, hook_event, hook_input, timeout) do
+    run_with_timeout(fn -> callback.(hook_event, hook_input) end, timeout)
   end
+
+  defp run_with_timeout(fun, timeout) do
+    caller = self()
+    ref = make_ref()
+
+    {pid, monitor_ref} =
+      spawn_monitor(fn ->
+        try do
+          result = fun.()
+          send(caller, {ref, {:ok, result}})
+        rescue
+          e ->
+            send(caller, {ref, {:error, Exception.message(e)}})
+        end
+      end)
+
+    receive do
+      {^ref, {:ok, result}} ->
+        Process.demonitor(monitor_ref, [:flush])
+        normalize_hook_result(result)
+
+      {^ref, {:error, message}} ->
+        Process.demonitor(monitor_ref, [:flush])
+        Logger.warning("Hook callback raised: #{message}")
+        {:result, %{}}
+
+      {:DOWN, ^monitor_ref, :process, ^pid, reason} ->
+        Logger.warning("Hook callback exited: #{inspect(reason)}")
+        {:result, %{}}
+    after
+      timeout ->
+        Process.demonitor(monitor_ref, [:flush])
+        Process.exit(pid, :kill)
+        Logger.warning("Hook callback timed out after #{timeout}ms")
+        {:result, %{}}
+    end
+  end
+
+  defp normalize_hook_result(:ok), do: {:result, %{}}
+  defp normalize_hook_result({:ok, result}) when is_map(result), do: {:result, result}
+  defp normalize_hook_result({:result, result}) when is_map(result), do: {:result, result}
+  defp normalize_hook_result(_), do: {:result, %{}}
 
   defp normalize_handler_result(:allow), do: {:allow, %{}}
   defp normalize_handler_result(:deny), do: {:deny, "Permission denied"}

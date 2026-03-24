@@ -56,6 +56,7 @@ defmodule ClaudeSDK.Transport.CommandBuilder do
     |> add_sdk_mcp_servers(opts.mcp_servers)
     |> add_repeated("--add-dir", opts.add_dirs)
     |> add_repeated("--plugin-dir", opts.plugin_dirs)
+    |> maybe_add("--log-file", opts.log_file)
     |> Kernel.++(opts.extra_args)
   end
 

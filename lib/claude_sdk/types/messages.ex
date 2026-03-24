@@ -70,14 +70,14 @@ defmodule ClaudeSDK.Types.UserMessage do
             role: :user,
             content: String.t() | list()
           },
-          session_id: String.t(),
+          session_id: String.t() | nil,
           uuid: String.t() | nil,
           parent_tool_use_id: String.t() | nil
         }
 
   defstruct type: :user,
             message: %{role: :user, content: ""},
-            session_id: "default",
+            session_id: nil,
             uuid: nil,
             parent_tool_use_id: nil
 end

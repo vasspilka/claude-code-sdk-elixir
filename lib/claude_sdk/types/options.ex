@@ -55,8 +55,8 @@ defmodule ClaudeSDK.Types.Options do
 
   ### Session Management
 
-  - `session_id` — Session identifier (default: `"default"`). All queries share a single
-    session unless explicitly overridden.
+  - `session_id` — Session identifier (default: `nil`, CLI auto-generates one).
+    Set explicitly to share a session across queries.
   - `continue` — If `true`, continue the most recent session.
   - `resume` — Resume a specific session by its ID string.
   - `fork_session` — If `true`, fork the current session instead of continuing it.
@@ -119,6 +119,8 @@ defmodule ClaudeSDK.Types.Options do
   ### Miscellaneous
 
   - `cli_path` — Override the CLI binary path (auto-discovered by default).
+  - `log_file` — Path to a file for CLI log output. Since Erlang ports only capture
+    stdout, this is the recommended way to capture CLI logs and stderr output.
   - `effort` — Effort level string.
   - `settings` — Map of CLI settings to override.
   - `setting_sources` — List of setting source paths.
@@ -127,6 +129,8 @@ defmodule ClaudeSDK.Types.Options do
     keyed by event name (e.g. `"PreToolUse"`, `"PostToolUse"`, `"Notification"`), where
     each value is a list of matcher/hook pairs. Sent via initialize (not as CLI args).
     See [Claude Code hooks documentation](https://docs.anthropic.com/en/docs/claude-code/hooks).
+  - `hook_timeout_ms` — Timeout in ms for individual hook callback invocations (default: 30_000).
+    If a hook callback doesn't return within this window, it is killed and a warning is logged.
   - `agents` — Agent definitions sent via initialize (not as CLI args). Accepts either a
     list of `%AgentDefinition{}` structs or a raw map.
   - `env` — Extra environment variables as a map of string key-value pairs.
@@ -154,6 +158,9 @@ defmodule ClaudeSDK.Types.Options do
   @type t :: %__MODULE__{
           # CLI path override (nil = auto-discover)
           cli_path: String.t() | nil,
+
+          # CLI log file path
+          log_file: String.t() | nil,
 
           # Prompt options
           system_prompt: String.t() | nil,
@@ -186,7 +193,7 @@ defmodule ClaudeSDK.Types.Options do
           continue: boolean(),
           resume: String.t() | nil,
           fork_session: boolean(),
-          session_id: String.t(),
+          session_id: String.t() | nil,
 
           # Working directory
           cwd: String.t() | nil,
@@ -246,12 +253,14 @@ defmodule ClaudeSDK.Types.Options do
           init_timeout_ms: pos_integer(),
           message_timeout_ms: pos_integer(),
           control_timeout_ms: pos_integer(),
+          hook_timeout_ms: pos_integer(),
 
           # Extra CLI args (escape hatch)
           extra_args: [String.t()]
         }
 
   defstruct cli_path: nil,
+            log_file: nil,
             system_prompt: nil,
             append_system_prompt: nil,
             model: nil,
@@ -268,7 +277,7 @@ defmodule ClaudeSDK.Types.Options do
             continue: false,
             resume: nil,
             fork_session: false,
-            session_id: "default",
+            session_id: nil,
             cwd: nil,
             add_dirs: [],
             include_partial_messages: false,
@@ -292,6 +301,7 @@ defmodule ClaudeSDK.Types.Options do
             init_timeout_ms: 30_000,
             message_timeout_ms: 120_000,
             control_timeout_ms: 30_000,
+            hook_timeout_ms: 30_000,
             extra_args: []
 
   @valid_permission_modes [nil, :default, :accept_edits, :plan, :bypass_permissions]
@@ -317,6 +327,7 @@ defmodule ClaudeSDK.Types.Options do
          :ok <- validate_timeout(:init_timeout_ms, opts.init_timeout_ms),
          :ok <- validate_timeout(:message_timeout_ms, opts.message_timeout_ms),
          :ok <- validate_timeout(:control_timeout_ms, opts.control_timeout_ms),
+         :ok <- validate_timeout(:hook_timeout_ms, opts.hook_timeout_ms),
          :ok <- validate_session_options(opts),
          :ok <- validate_permission_options(opts),
          :ok <- validate_output_options(opts) do

@@ -323,7 +323,7 @@ defmodule ClaudeSDK.Transport.CommandBuilderTest do
       env = CommandBuilder.build_env(%Options{})
 
       assert {"CLAUDE_CODE_ENTRYPOINT", "sdk-elixir"} in env
-      assert {"CLAUDE_AGENT_SDK_VERSION", "0.2.0"} in env
+      assert {"CLAUDE_AGENT_SDK_VERSION", "0.2.1"} in env
     end
 
     test "includes user-provided env vars" do
