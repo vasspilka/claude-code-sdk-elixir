@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+
+# Handle version check
+if [ "$1" = "-v" ]; then echo "99.0.0"; exit 0; fi
 # Mock CLI that outputs a line exceeding the Port's {:line, 1_048_576} limit.
 # This triggers the :noeol handling path in Subprocess.
 set -e

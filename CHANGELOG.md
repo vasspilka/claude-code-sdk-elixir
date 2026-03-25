@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `ClaudeSDK.Transport` behaviour — pluggable transport abstraction with `start_link/1`, `start/1`, `send_message/2`, and `stop/1` callbacks
+- `transport_module` option in `Options` (default: `ClaudeSDK.Transport.Subprocess`) — allows swapping the transport for testing or alternative communication channels
+- `Client.disconnect/1` — stops the CLI subprocess while keeping the Client GenServer alive for later reconnection via `connect/1`
+
+### Changed
+
+- `Client.set_model/2`, `Client.set_permission_mode/2`, and `Client.stop_task/2` are now blocking — they wait for CLI acknowledgment instead of being fire-and-forget
+- `Client.interrupt/1` now sends a proper `control_request` with `request_id` instead of a bare `{type: "interrupt"}` message, matching the CLI protocol
+- All subprocess communication in `ClaudeSDK` and `Client` routes through the configured `transport_module` instead of hardcoded `Subprocess` calls
+- `Internal.safe_stop_subprocess/1` uses generic `GenServer.stop/2` instead of transport-specific `Subprocess.stop/1`
+- SDK version fallback uses compile-time module attribute instead of runtime `MixProject.project()` call
+
+### Fixed
+
+- `active_caller` now cleared on result message in streaming state (previously leaked stale reference)
+- Unicode sanitization added to `Sessions.rename_session/3` and `Sessions.tag_session/3` — NFKC normalization and dangerous Unicode stripping (format, private-use, unassigned codepoints), matching Python SDK's `_sanitize_unicode()`
+- Clarified `output_format` docs — `output_format: :json` and `json_schema` share the same underlying CLI flag and are mutually exclusive
+
+### Improved
+
+- 156 new tests: Client disconnect/reconnect, blocking control operations, interrupt states, caller monitor recovery, ControlRouter hooks (arity-1/2, lists, crashes, timeouts), LineBuffer edge cases, Sessions CRUD with unicode sanitization, MCP server config validation
+- All 16 mock CLI scripts now handle `-v` flag for version checking
+
 ## [0.2.1] - 2026-03-25
 
 ### Added

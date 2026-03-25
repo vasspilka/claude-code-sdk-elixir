@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+
+# Handle version check
+if [ "$1" = "-v" ]; then echo "99.0.0"; exit 0; fi
 # Mock CLI that initializes and responds but exits cleanly without sending a result.
 set -e
 

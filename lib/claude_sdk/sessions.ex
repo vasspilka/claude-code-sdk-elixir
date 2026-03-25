@@ -136,6 +136,7 @@ defmodule ClaudeSDK.Sessions do
   Rename a session by setting a custom title.
 
   Appends a `custom-title` entry to the session's JSONL file.
+  The title is sanitized (NFKC normalization, dangerous Unicode stripped).
   """
   @spec rename_session(String.t(), String.t(), keyword()) :: :ok | {:error, term()}
   def rename_session(session_id, title, opts \\ []) do
@@ -144,7 +145,7 @@ defmodule ClaudeSDK.Sessions do
 
       entry = %{
         "type" => "custom-title",
-        "customTitle" => title,
+        "customTitle" => sanitize_unicode(title),
         "sessionId" => session_id
       }
 
@@ -156,6 +157,7 @@ defmodule ClaudeSDK.Sessions do
   Tag a session with a label.
 
   Appends a `tag` entry to the session's JSONL file. Pass `nil` as tag to clear it.
+  The tag is sanitized (NFKC normalization, dangerous Unicode stripped).
   """
   @spec tag_session(String.t(), String.t() | nil, keyword()) :: :ok | {:error, term()}
   def tag_session(session_id, tag, opts \\ []) do
@@ -164,7 +166,7 @@ defmodule ClaudeSDK.Sessions do
 
       entry = %{
         "type" => "tag",
-        "tag" => tag || "",
+        "tag" => sanitize_unicode(tag || ""),
         "sessionId" => session_id
       }
 
@@ -387,6 +389,37 @@ defmodule ClaudeSDK.Sessions do
         parent_tool_use_id: entry["parent_tool_use_id"]
       }
     end)
+  end
+
+  # Sanitize a string by applying NFKC normalization and stripping
+  # dangerous Unicode characters (format, private-use, unassigned).
+  # Matches the Python SDK's _sanitize_unicode() in session_mutations.py.
+  @max_sanitize_iterations 10
+
+  defp sanitize_unicode(text) when is_binary(text) do
+    text
+    |> normalize_nfkc(0)
+    |> strip_dangerous_unicode()
+  end
+
+  defp sanitize_unicode(text), do: text
+
+  defp normalize_nfkc(text, iteration) when iteration < @max_sanitize_iterations do
+    normalized = :unicode.characters_to_nfkc_binary(text)
+
+    if normalized == text do
+      text
+    else
+      normalize_nfkc(normalized, iteration + 1)
+    end
+  end
+
+  defp normalize_nfkc(text, _iteration), do: text
+
+  # Strip format characters (Cf), private-use (Co), and unassigned (Cn) codepoints.
+  # This removes zero-width spaces, directional marks, BOM, and other invisible chars.
+  defp strip_dangerous_unicode(text) do
+    Regex.replace(~r/[\p{Cf}\p{Co}\p{Cn}]/u, text, "")
   end
 
   defp append_to_session(session_id, entry, directory) do

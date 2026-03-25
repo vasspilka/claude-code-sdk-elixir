@@ -156,7 +156,7 @@ defmodule ClaudeSDK.EdgeCasesTest do
       assert {:error, :control_timeout} = Task.await(task)
 
       # Client should be back in :connected state
-      assert :ok = Client.set_model(client, "new-model")
+      assert Client.connected?(client)
 
       Client.close(client)
     end

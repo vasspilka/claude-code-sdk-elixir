@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+
+# Handle version check
+if [ "$1" = "-v" ]; then echo "99.0.0"; exit 0; fi
 # Mock CLI that stays alive across multiple user messages.
 # Sends a result per turn but does not exit until stdin closes.
 

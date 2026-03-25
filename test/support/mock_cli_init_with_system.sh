@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+
+# Handle version check
+if [ "$1" = "-v" ]; then echo "99.0.0"; exit 0; fi
 # Mock CLI that sends a system message BEFORE the control_response.
 # Tests the wait_for_init_loop skip-non-control_response path.
 set -e

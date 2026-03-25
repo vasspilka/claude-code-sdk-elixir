@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+
+# Handle version check
+if [ "$1" = "-v" ]; then echo "99.0.0"; exit 0; fi
 # Mock CLI that sends a control_request with an unknown subtype during streaming.
 # Tests the unhandled control_request -> parse -> forward path.
 set -e

@@ -59,7 +59,6 @@ defmodule ClaudeSDK do
   alias ClaudeSDK.ControlRouter
   alias ClaudeSDK.Internal
   alias ClaudeSDK.MessageParser
-  alias ClaudeSDK.Transport.Subprocess
   alias ClaudeSDK.Types.Options
 
   @doc """
@@ -155,9 +154,10 @@ defmodule ClaudeSDK do
   # Stream.resource start_fun: spawn subprocess and send initialization + prompt
   defp start_subprocess(prompt, opts) do
     control_handlers = Internal.build_control_handlers(opts)
+    transport_mod = opts.transport_module
 
     {:ok, pid} =
-      case Subprocess.start(caller: self(), options: opts) do
+      case transport_mod.start(caller: self(), options: opts) do
         {:ok, pid} ->
           {:ok, pid}
 
@@ -168,7 +168,7 @@ defmodule ClaudeSDK do
           raise ClaudeSDK.TransportError, reason: reason
       end
 
-    Subprocess.send_message(pid, Internal.build_init_request(opts))
+    transport_mod.send_message(pid, Internal.build_init_request(opts))
 
     init_timeout = opts.init_timeout_ms
 
@@ -196,12 +196,13 @@ defmodule ClaudeSDK do
       parent_tool_use_id: nil
     }
 
-    Subprocess.send_message(pid, user_message)
+    transport_mod.send_message(pid, user_message)
 
     message_timeout = opts.message_timeout_ms
 
     %{
       subprocess: pid,
+      transport_module: transport_mod,
       control_handlers: control_handlers,
       message_timeout: message_timeout,
       started_at: System.monotonic_time(:millisecond)
@@ -213,13 +214,19 @@ defmodule ClaudeSDK do
   defp receive_messages(:halt), do: {:halt, :done}
 
   defp receive_messages(
-         %{subprocess: pid, control_handlers: handlers, message_timeout: message_timeout} = state
+         %{
+           subprocess: pid,
+           transport_module: transport_mod,
+           control_handlers: handlers,
+           message_timeout: message_timeout
+         } =
+           state
        ) do
     receive do
       {:claude_message, %{"type" => "control_request"} = raw} ->
         case ControlRouter.dispatch(raw, handlers) do
           {:handled, response} ->
-            Subprocess.send_message(pid, response)
+            transport_mod.send_message(pid, response)
             {[], state}
 
           {:unhandled, _} ->

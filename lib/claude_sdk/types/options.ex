@@ -98,7 +98,8 @@ defmodule ClaudeSDK.Types.Options do
   ### Output Format
 
   - `output_format` — JSON Schema map for CLI-level structured output. Maps to
-    `--output-format` JSON. Result appears in `ResultMessage.structured_output`.
+    `--json-schema` (same underlying CLI flag as `json_schema`; they are mutually
+    exclusive). Result appears in `ResultMessage.structured_output`.
 
   ### Sandbox
 
@@ -256,7 +257,10 @@ defmodule ClaudeSDK.Types.Options do
           hook_timeout_ms: pos_integer(),
 
           # Extra CLI args (escape hatch)
-          extra_args: [String.t()]
+          extra_args: [String.t()],
+
+          # Transport module (must implement ClaudeSDK.Transport behaviour)
+          transport_module: module()
         }
 
   defstruct cli_path: nil,
@@ -302,7 +306,8 @@ defmodule ClaudeSDK.Types.Options do
             message_timeout_ms: 120_000,
             control_timeout_ms: 30_000,
             hook_timeout_ms: 30_000,
-            extra_args: []
+            extra_args: [],
+            transport_module: ClaudeSDK.Transport.Subprocess
 
   @valid_permission_modes [nil, :default, :accept_edits, :plan, :bypass_permissions]
   @valid_efforts [nil, "low", "medium", "high", "max"]

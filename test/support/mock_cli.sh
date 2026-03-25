@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+
+# Handle version check
+if [ "$1" = "-v" ]; then echo "99.0.0"; exit 0; fi
 # Mock Claude CLI for integration testing.
 # Reads stdin for JSON messages, responds with canned output on stdout.
 # Expects: initialize control request, then user message.

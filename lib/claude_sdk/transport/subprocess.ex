@@ -16,6 +16,8 @@ defmodule ClaudeSDK.Transport.Subprocess do
   wrapper that redirects stderr.
   """
 
+  @behaviour ClaudeSDK.Transport
+
   use GenServer
 
   alias ClaudeSDK.Transport.{CLIDiscovery, CommandBuilder, LineBuffer}
@@ -34,23 +36,27 @@ defmodule ClaudeSDK.Transport.Subprocess do
   - `:caller` — pid to send parsed messages to (default: self())
   - `:options` — `%Options{}` struct
   """
+  @impl ClaudeSDK.Transport
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts)
   end
 
+  @impl ClaudeSDK.Transport
   @doc "Start the subprocess without linking to the caller."
   @spec start(keyword()) :: GenServer.on_start()
   def start(opts) do
     GenServer.start(__MODULE__, opts)
   end
 
+  @impl ClaudeSDK.Transport
   @doc "Send a map as a JSON line to the CLI's stdin."
   @spec send_message(GenServer.server(), map()) :: :ok
   def send_message(server, message) when is_map(message) do
     GenServer.cast(server, {:send, message})
   end
 
+  @impl ClaudeSDK.Transport
   @doc "Gracefully stop the subprocess."
   @spec stop(GenServer.server()) :: :ok
   def stop(server) do

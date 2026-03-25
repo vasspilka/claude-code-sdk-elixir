@@ -7,12 +7,14 @@ defmodule ClaudeSDK.Internal do
     "req_" <> Base.encode16(:crypto.strong_rand_bytes(8), case: :lower)
   end
 
+  @sdk_version Mix.Project.config()[:version] || "0.0.0"
+
   @doc false
   @spec sdk_version() :: String.t()
   def sdk_version do
     case :application.get_key(:claude_sdk, :vsn) do
       {:ok, vsn} -> List.to_string(vsn)
-      :undefined -> ClaudeSDK.MixProject.project()[:version]
+      :undefined -> @sdk_version
     end
   end
 
@@ -119,7 +121,7 @@ defmodule ClaudeSDK.Internal do
   @doc false
   @spec safe_stop_subprocess(pid()) :: :ok
   def safe_stop_subprocess(pid) do
-    if Process.alive?(pid), do: ClaudeSDK.Transport.Subprocess.stop(pid)
+    if Process.alive?(pid), do: GenServer.stop(pid, :normal)
     :ok
   catch
     :exit, _ -> :ok

@@ -462,7 +462,7 @@ defmodule ClaudeSDK.ClientCoverageTest do
       assert_receive {:client_exit, _gen, :interrupted}, 1000
 
       # Should be back in connected state
-      assert :ok = Client.set_model(client, "new-model")
+      assert Client.connected?(client)
 
       Client.close(client)
     end

@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+
+# Handle version check
+if [ "$1" = "-v" ]; then echo "99.0.0"; exit 0; fi
 # Mock CLI that handles rewind_files control_request.
 # Stays alive across turns like mock_cli_multiturn.sh.
 
