@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ClaudeSDK.Transport` behaviour — pluggable transport abstraction with `start_link/1`, `start/1`, `send_message/2`, and `stop/1` callbacks
 - `transport_module` option in `Options` (default: `ClaudeSDK.Transport.Subprocess`) — allows swapping the transport for testing or alternative communication channels
 - `Client.disconnect/1` — stops the CLI subprocess while keeping the Client GenServer alive for later reconnection via `connect/1`
+- `Client.query/3` now accepts `parent_tool_use_id` and `tool_use_result` keyword options for nested tool interaction flows, matching the Python SDK's `ClaudeSDKClient.query()`
 
 ### Changed
 
@@ -23,9 +24,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Control response request_id correlation** — Client now matches `request_id` on incoming `control_response` messages against the pending request. Stale responses (e.g. from a timed-out request) are discarded instead of being attributed to a new request. Backwards-compatible with older CLI versions that omit `request_id`.
+- **Port.command failure handling** — `Subprocess` now checks the return value of `Port.command/2` and rescues `ArgumentError`. On failure, the caller is notified with `{:claude_exit, {:error, :port_closed}}` and the GenServer stops gracefully, instead of silently losing messages.
 - `active_caller` now cleared on result message in streaming state (previously leaked stale reference)
 - Unicode sanitization added to `Sessions.rename_session/3` and `Sessions.tag_session/3` — NFKC normalization and dangerous Unicode stripping (format, private-use, unassigned codepoints), matching Python SDK's `_sanitize_unicode()`
 - Clarified `output_format` docs — `output_format: :json` and `json_schema` share the same underlying CLI flag and are mutually exclusive
+- Removed TOCTOU race in `Internal.safe_stop_subprocess/1` — `Process.alive?` check before `GenServer.stop` was redundant since the `catch :exit` already handles dead processes
+- `setting_sources` values now validated — must be `"user"`, `"project"`, or `"local"` (catches typos early, matching Python SDK validation)
 
 ### Improved
 

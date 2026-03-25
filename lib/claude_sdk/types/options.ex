@@ -311,6 +311,7 @@ defmodule ClaudeSDK.Types.Options do
 
   @valid_permission_modes [nil, :default, :accept_edits, :plan, :bypass_permissions]
   @valid_efforts [nil, "low", "medium", "high", "max"]
+  @valid_setting_sources ["user", "project", "local"]
 
   @doc """
   Validate an Options struct, returning `:ok` or `{:error, reason}`.
@@ -335,7 +336,8 @@ defmodule ClaudeSDK.Types.Options do
          :ok <- validate_timeout(:hook_timeout_ms, opts.hook_timeout_ms),
          :ok <- validate_session_options(opts),
          :ok <- validate_permission_options(opts),
-         :ok <- validate_output_options(opts) do
+         :ok <- validate_output_options(opts),
+         :ok <- validate_setting_sources(opts.setting_sources) do
       :ok
     end
   end
@@ -401,4 +403,22 @@ defmodule ClaudeSDK.Types.Options do
             "output_format controls the CLI's output structure. Use one or the other."}
 
   defp validate_output_options(_), do: :ok
+
+  defp validate_setting_sources(nil), do: :ok
+  defp validate_setting_sources([]), do: :ok
+
+  defp validate_setting_sources(sources) when is_list(sources) do
+    invalid = Enum.reject(sources, &(&1 in @valid_setting_sources))
+
+    if invalid == [] do
+      :ok
+    else
+      {:error,
+       "setting_sources must be a list of #{inspect(@valid_setting_sources)}, " <>
+         "got invalid entries: #{inspect(invalid)}"}
+    end
+  end
+
+  defp validate_setting_sources(other),
+    do: {:error, "setting_sources must be nil or a list, got: #{inspect(other)}"}
 end

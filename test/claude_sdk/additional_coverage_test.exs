@@ -416,7 +416,7 @@ defmodule ClaudeSDK.AdditionalCoverageTest do
       {:ok, client} = Client.start_link(options: opts)
       :ok = Client.connect(client)
 
-      {:ok, _timeout, _gen} = GenServer.call(client, {:start_query, "test", self()})
+      {:ok, _timeout, _gen} = GenServer.call(client, {:start_query, %{prompt: "test", caller: self()}})
       assert {:error, :busy} = Client.disconnect(client)
 
       receive do
@@ -457,7 +457,7 @@ defmodule ClaudeSDK.AdditionalCoverageTest do
       {:ok, client} = Client.start_link(options: opts)
       :ok = Client.connect(client)
 
-      {:ok, _timeout, _gen} = GenServer.call(client, {:start_query, "test", self()})
+      {:ok, _timeout, _gen} = GenServer.call(client, {:start_query, %{prompt: "test", caller: self()}})
       assert {:error, :busy} = Client.stop_task(client, "task-123")
 
       receive do
@@ -498,7 +498,7 @@ defmodule ClaudeSDK.AdditionalCoverageTest do
       {:ok, client} = Client.start_link(options: opts)
       :ok = Client.connect(client)
 
-      {:ok, _timeout, _gen} = GenServer.call(client, {:start_query, "test", self()})
+      {:ok, _timeout, _gen} = GenServer.call(client, {:start_query, %{prompt: "test", caller: self()}})
       assert {:error, :busy} = Client.set_permission_mode(client, :plan)
 
       receive do
@@ -539,7 +539,7 @@ defmodule ClaudeSDK.AdditionalCoverageTest do
       {:ok, client} = Client.start_link(options: opts)
       :ok = Client.connect(client)
 
-      {:ok, _timeout, _gen} = GenServer.call(client, {:start_query, "test", self()})
+      {:ok, _timeout, _gen} = GenServer.call(client, {:start_query, %{prompt: "test", caller: self()}})
       assert {:error, :busy} = Client.add_mcp_server(client, "s", %{})
 
       receive do
@@ -577,7 +577,7 @@ defmodule ClaudeSDK.AdditionalCoverageTest do
       {:ok, client} = Client.start_link(options: opts)
       :ok = Client.connect(client)
 
-      {:ok, _timeout, _gen} = GenServer.call(client, {:start_query, "test", self()})
+      {:ok, _timeout, _gen} = GenServer.call(client, {:start_query, %{prompt: "test", caller: self()}})
       assert {:error, :busy} = Client.remove_mcp_server(client, "s")
 
       receive do
@@ -658,7 +658,7 @@ defmodule ClaudeSDK.AdditionalCoverageTest do
           end
         end)
 
-      {:ok, _timeout, _gen} = GenServer.call(client, {:start_query, "test2", consumer})
+      {:ok, _timeout, _gen} = GenServer.call(client, {:start_query, %{prompt: "test2", caller: consumer}})
 
       # Kill the consumer while streaming
       Process.exit(consumer, :kill)
@@ -725,7 +725,7 @@ defmodule ClaudeSDK.AdditionalCoverageTest do
 
     test "start_query when disconnected" do
       {:ok, client} = Client.start_link()
-      assert {:error, :not_connected} = GenServer.call(client, {:start_query, "test", self()})
+      assert {:error, :not_connected} = GenServer.call(client, {:start_query, %{prompt: "test", caller: self()}})
       Client.close(client)
     end
   end

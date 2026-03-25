@@ -78,6 +78,7 @@ defmodule ClaudeSDK.Client do
     :caller_monitor,
     :server_info,
     :reply_mode,
+    :pending_request_id,
     state: :disconnected,
     query_gen: 0
   ]
@@ -111,11 +112,21 @@ defmodule ClaudeSDK.Client do
 
   The subprocess stays alive after the stream completes, allowing
   subsequent queries in the same session.
+
+  ## Options
+
+  - `parent_tool_use_id` — When non-nil, marks this as a nested response
+    within a tool-use flow.
+  - `tool_use_result` — When provided, sends a tool result to the CLI
+    instead of a plain user message. Must include at least `"tool_use_id"`.
   """
-  @spec query(GenServer.server(), String.t()) :: Enumerable.t()
-  def query(client, prompt) when is_binary(prompt) do
+  @spec query(GenServer.server(), String.t(), keyword()) :: Enumerable.t()
+  def query(client, prompt, opts \\ []) when is_binary(prompt) do
+    parent_tool_use_id = Keyword.get(opts, :parent_tool_use_id)
+    tool_use_result = Keyword.get(opts, :tool_use_result)
+
     Stream.resource(
-      fn -> start_query(client, prompt) end,
+      fn -> start_query(client, prompt, parent_tool_use_id, tool_use_result) end,
       fn state -> receive_client_messages(state, client) end,
       fn _state -> finish_query(client) end
     )
@@ -358,7 +369,8 @@ defmodule ClaudeSDK.Client do
          subprocess: nil,
          transport_module: nil,
          control_handlers: nil,
-         server_info: nil
+         server_info: nil,
+         pending_request_id: nil
      }}
   end
 
@@ -370,13 +382,20 @@ defmodule ClaudeSDK.Client do
     {:reply, {:error, state_error(s)}, state}
   end
 
-  def handle_call({:start_query, prompt, caller}, _from, %{state: :connected} = state) do
+  def handle_call({:start_query, query_opts}, _from, %{state: :connected} = state) do
+    %{prompt: prompt, caller: caller} = query_opts
+    parent_tool_use_id = Map.get(query_opts, :parent_tool_use_id)
+    tool_use_result = Map.get(query_opts, :tool_use_result)
+
     user_message = %{
       type: "user",
       session_id: state.session_id || state.options.session_id,
       message: %{role: "user", content: prompt},
-      parent_tool_use_id: nil
+      parent_tool_use_id: parent_tool_use_id
     }
+
+    user_message =
+      if tool_use_result, do: Map.put(user_message, :tool_use_result, tool_use_result), else: user_message
 
     send_to_cli(state, user_message)
 
@@ -394,7 +413,7 @@ defmodule ClaudeSDK.Client do
      }}
   end
 
-  def handle_call({:start_query, _prompt, _caller}, _from, %{state: s} = state) do
+  def handle_call({:start_query, _query_opts}, _from, %{state: s} = state) do
     {:reply, {:error, state_error(s)}, state}
   end
 
@@ -423,7 +442,15 @@ defmodule ClaudeSDK.Client do
     send_to_cli(state, rewind_request)
 
     timer = Process.send_after(self(), :control_timeout, control_timeout(state))
-    {:noreply, %{state | state: :awaiting_rewind, active_caller: from, control_timer: timer}}
+
+    {:noreply,
+     %{
+       state
+       | state: :awaiting_rewind,
+         active_caller: from,
+         control_timer: timer,
+         pending_request_id: request_id
+     }}
   end
 
   def handle_call({:rewind_files, _}, _from, %{state: s} = state) do
@@ -547,31 +574,59 @@ defmodule ClaudeSDK.Client do
   end
 
   def handle_info(
-        {:claude_message, %{"type" => "control_response"} = raw},
-        %{state: :awaiting_rewind} = state
-      ) do
+        {:claude_message, %{"type" => "control_response", "request_id" => rid} = raw},
+        %{state: :awaiting_rewind, pending_request_id: rid} = state
+      )
+      when is_binary(rid) do
     cancel_control_timer(state)
     GenServer.reply(state.active_caller, parse_rewind_response(raw))
-    {:noreply, %{state | state: :connected, active_caller: nil, control_timer: nil}}
+
+    {:noreply,
+     %{state | state: :connected, active_caller: nil, control_timer: nil, pending_request_id: nil}}
+  end
+
+  # Rewind response without request_id (backwards compat with older CLI versions)
+  def handle_info(
+        {:claude_message, %{"type" => "control_response"} = raw},
+        %{state: :awaiting_rewind, pending_request_id: _} = state
+      )
+      when not is_map_key(raw, "request_id") do
+    cancel_control_timer(state)
+    GenServer.reply(state.active_caller, parse_rewind_response(raw))
+
+    {:noreply,
+     %{state | state: :connected, active_caller: nil, control_timer: nil, pending_request_id: nil}}
   end
 
   def handle_info(
+        {:claude_message, %{"type" => "control_response", "request_id" => rid} = raw},
+        %{state: :awaiting_control_response, pending_request_id: rid} = state
+      )
+      when is_binary(rid) do
+    handle_control_response(raw, state)
+  end
+
+  # Control response without request_id (backwards compat with older CLI versions)
+  def handle_info(
         {:claude_message, %{"type" => "control_response"} = raw},
-        %{state: :awaiting_control_response} = state
-      ) do
-    cancel_control_timer(state)
-    response = raw["response"] || %{}
+        %{state: :awaiting_control_response, pending_request_id: _} = state
+      )
+      when not is_map_key(raw, "request_id") do
+    handle_control_response(raw, state)
+  end
 
-    reply =
-      case state.reply_mode do
-        :ok_only -> :ok
-        _ -> {:ok, response}
-      end
+  # Stale control response with mismatched request_id — discard
+  def handle_info(
+        {:claude_message, %{"type" => "control_response", "request_id" => rid}},
+        %{state: awaiting} = state
+      )
+      when awaiting in [:awaiting_rewind, :awaiting_control_response] and is_binary(rid) do
+    Logger.debug(
+      "Discarding stale control_response with request_id=#{rid} " <>
+        "(expected #{inspect(state.pending_request_id)})"
+    )
 
-    GenServer.reply(state.active_caller, reply)
-
-    {:noreply,
-     %{state | state: :connected, active_caller: nil, control_timer: nil, reply_mode: nil}}
+    {:noreply, state}
   end
 
   def handle_info({:claude_message, %{"type" => "result"} = raw}, %{state: :streaming} = state) do
@@ -632,14 +687,17 @@ defmodule ClaudeSDK.Client do
          subprocess: nil,
          active_caller: nil,
          control_timer: nil,
-         caller_monitor: nil
+         caller_monitor: nil,
+         pending_request_id: nil
      }}
   end
 
   def handle_info(:control_timeout, %{state: awaiting} = state)
       when awaiting in [:awaiting_rewind, :awaiting_control_response] do
     GenServer.reply(state.active_caller, {:error, :control_timeout})
-    {:noreply, %{state | state: :connected, active_caller: nil, control_timer: nil}}
+
+    {:noreply,
+     %{state | state: :connected, active_caller: nil, control_timer: nil, pending_request_id: nil}}
   end
 
   def handle_info(:control_timeout, state) do
@@ -715,8 +773,15 @@ defmodule ClaudeSDK.Client do
     end
   end
 
-  defp start_query(client, prompt) do
-    case GenServer.call(client, {:start_query, prompt, self()}) do
+  defp start_query(client, prompt, parent_tool_use_id, tool_use_result) do
+    query_opts = %{
+      prompt: prompt,
+      caller: self(),
+      parent_tool_use_id: parent_tool_use_id,
+      tool_use_result: tool_use_result
+    }
+
+    case GenServer.call(client, {:start_query, query_opts}) do
       {:ok, message_timeout, gen} -> {:streaming, message_timeout, client, gen}
       {:error, reason} -> raise ClaudeSDK.QueryError, reason: reason
     end
@@ -776,6 +841,29 @@ defmodule ClaudeSDK.Client do
 
   defp maybe_forward_to_caller(_raw, _state), do: :ok
 
+  defp handle_control_response(raw, state) do
+    cancel_control_timer(state)
+    response = raw["response"] || %{}
+
+    reply =
+      case state.reply_mode do
+        :ok_only -> :ok
+        _ -> {:ok, response}
+      end
+
+    GenServer.reply(state.active_caller, reply)
+
+    {:noreply,
+     %{
+       state
+       | state: :connected,
+         active_caller: nil,
+         control_timer: nil,
+         reply_mode: nil,
+         pending_request_id: nil
+     }}
+  end
+
   defp send_control_and_await(request_fields, from, state, reply_mode \\ nil) do
     request_id = Internal.generate_request_id()
 
@@ -794,7 +882,8 @@ defmodule ClaudeSDK.Client do
        | state: :awaiting_control_response,
          active_caller: from,
          control_timer: timer,
-         reply_mode: reply_mode
+         reply_mode: reply_mode,
+         pending_request_id: request_id
      }}
   end
 

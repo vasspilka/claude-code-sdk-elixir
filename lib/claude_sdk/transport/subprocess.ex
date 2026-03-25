@@ -163,8 +163,19 @@ defmodule ClaudeSDK.Transport.Subprocess do
   @impl true
   def handle_cast({:send, message}, %{port: port} = state) do
     json = Jason.encode!(message) <> "\n"
-    Port.command(port, json)
-    {:noreply, state}
+
+    if Port.command(port, json) do
+      {:noreply, state}
+    else
+      Logger.warning("Port.command returned false — port is closed")
+      send(state.caller, {:claude_exit, {:error, :port_closed}})
+      {:stop, :normal, state}
+    end
+  rescue
+    ArgumentError ->
+      Logger.warning("Port.command raised — port is closed")
+      send(state.caller, {:claude_exit, {:error, :port_closed}})
+      {:stop, :normal, state}
   end
 
   @impl true

@@ -121,7 +121,7 @@ defmodule ClaudeSDK.Internal do
   @doc false
   @spec safe_stop_subprocess(pid()) :: :ok
   def safe_stop_subprocess(pid) do
-    if Process.alive?(pid), do: GenServer.stop(pid, :normal)
+    GenServer.stop(pid, :normal)
     :ok
   catch
     :exit, _ -> :ok

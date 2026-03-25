@@ -208,7 +208,7 @@ defmodule ClaudeSDK.ClientTest do
 
       # Put the client into :streaming state by calling start_query
       assert {:ok, _timeout, _gen} =
-               GenServer.call(client, {:start_query, "test prompt", self()})
+               GenServer.call(client, {:start_query, %{prompt: "test prompt", caller: self()}})
 
       # Now set_model should fail because we're streaming
       assert {:error, :busy} =
@@ -231,7 +231,7 @@ defmodule ClaudeSDK.ClientTest do
       :ok = Client.connect(client)
 
       assert {:ok, _timeout, _gen} =
-               GenServer.call(client, {:start_query, "test prompt", self()})
+               GenServer.call(client, {:start_query, %{prompt: "test prompt", caller: self()}})
 
       assert {:error, :busy} =
                Client.set_permission_mode(client, :plan)
