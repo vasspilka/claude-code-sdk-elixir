@@ -209,7 +209,10 @@ defmodule ClaudeSDK.ControlRouterTest do
     end
 
     test "callback returning {:allow, permissions} merges permissions" do
-      callback = fn _tool, _input -> {:allow, %{temporary: true}} end
+      callback = fn _tool, _input ->
+        {:allow, updated_permissions: ["Read", "Glob"]}
+      end
+
       handlers = ControlRouter.build_handlers(%{can_use_tool: callback, mcp_tool_index: %{}})
 
       raw = %{
@@ -224,7 +227,7 @@ defmodule ClaudeSDK.ControlRouterTest do
 
       {:handled, response} = ControlRouter.dispatch(raw, handlers)
       assert response.response.allowed == true
-      assert response.response.temporary == true
+      assert response.response.updatedPermissions == ["Read", "Glob"]
     end
   end
 

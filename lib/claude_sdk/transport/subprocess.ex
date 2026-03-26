@@ -25,7 +25,7 @@ defmodule ClaudeSDK.Transport.Subprocess do
 
   require Logger
 
-  defstruct [:port, :caller, :buffer, :cli_path, :options]
+  defstruct [:port, :caller, :caller_monitor, :buffer, :cli_path, :options]
 
   # Client API
 
@@ -116,9 +116,13 @@ defmodule ClaudeSDK.Transport.Subprocess do
     try do
       port = Port.open({:spawn_executable, cli_path}, port_opts)
 
+      # Monitor the caller so we stop if it dies (prevents orphaned subprocesses)
+      caller_monitor = Process.monitor(caller)
+
       state = %__MODULE__{
         port: port,
         caller: caller,
+        caller_monitor: caller_monitor,
         buffer: LineBuffer.new(),
         cli_path: cli_path,
         options: options
@@ -211,8 +215,14 @@ defmodule ClaudeSDK.Transport.Subprocess do
   end
 
   def handle_info({port, {:exit_status, code}}, %{port: port} = state) do
-    send(state.caller, {:claude_exit, {:error, code}})
+    error = ClaudeSDK.ProcessExitError.exception(exit_code: code)
+    send(state.caller, {:claude_exit, {:error, error}})
     {:stop, {:cli_exit, code}, state}
+  end
+
+  def handle_info({:DOWN, ref, :process, _pid, _reason}, %{caller_monitor: ref} = state) do
+    # Caller process died — stop to prevent orphaned subprocess
+    {:stop, :normal, state}
   end
 
   def handle_info(msg, state) do

@@ -75,7 +75,7 @@ defmodule ClaudeSDK.Transport.SubprocessCoverageTest do
       })
 
       assert_receive {:claude_message, %{"type" => "control_response"}}, 5000
-      assert_receive {:claude_exit, {:error, 1}}, 5000
+      assert_receive {:claude_exit, {:error, %ClaudeSDK.ProcessExitError{exit_code: 1}}}, 5000
 
       File.rm(script_path)
     end

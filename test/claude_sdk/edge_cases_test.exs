@@ -13,8 +13,8 @@ defmodule ClaudeSDK.EdgeCasesTest do
 
   describe "CLI crash during initialization" do
     @tag :capture_log
-    test "stateless query raises TransportError when CLI crashes before control_response" do
-      assert_raise ClaudeSDK.TransportError, ~r/CLI exited during initialization/, fn ->
+    test "stateless query raises ProcessExitError when CLI crashes before control_response" do
+      assert_raise ClaudeSDK.ProcessExitError, ~r/CLI subprocess exited with status/, fn ->
         ClaudeSDK.query("hello", %Options{cli_path: @mock_cli_crash_init})
         |> Enum.to_list()
       end
@@ -25,7 +25,7 @@ defmodule ClaudeSDK.EdgeCasesTest do
       opts = %Options{cli_path: @mock_cli_crash_init}
       {:ok, client} = Client.start_link(options: opts)
 
-      assert {:error, {:cli_exited, _}} = Client.connect(client)
+      assert {:error, %ClaudeSDK.ProcessExitError{}} = Client.connect(client)
 
       Client.close(client)
     end

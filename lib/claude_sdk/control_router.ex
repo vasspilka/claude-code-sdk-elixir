@@ -12,12 +12,16 @@ defmodule ClaudeSDK.ControlRouter do
 
   require Logger
 
+  @type permission_result ::
+          :allow
+          | {:allow, map() | keyword()}
+          | :deny
+          | {:deny, String.t()}
+          | {:deny, String.t(), :interrupt}
+
   @type handler ::
           (map() ->
-             :allow
-             | {:allow, map()}
-             | :deny
-             | {:deny, String.t()}
+             permission_result()
              | {:result, map()}
              | :ok
              | {:ok, map()})
@@ -44,7 +48,8 @@ defmodule ClaudeSDK.ControlRouter do
   response, or `{:unhandled, request}` if no handler is registered for
   the request subtype.
   """
-  @spec dispatch(map(), handler_registry()) :: {:handled, map()} | {:unhandled, map()}
+  @spec dispatch(map(), handler_registry()) ::
+          {:handled, map()} | {:handled_with_interrupt, map()} | {:unhandled, map()}
   def dispatch(%{"request_id" => request_id, "request" => request} = raw, handlers)
       when is_binary(request_id) and is_map(request) do
     subtype = request["subtype"]
@@ -55,9 +60,16 @@ defmodule ClaudeSDK.ControlRouter do
 
       handler when is_function(handler, 1) ->
         try do
-          result = normalize_handler_result(handler.(request))
+          # Include request_id in the request so handlers can access it
+          # (e.g. ToolPermissionContext needs the envelope's request_id)
+          enriched_request = Map.put_new(request, "request_id", request_id)
+          result = normalize_handler_result(handler.(enriched_request))
 
           case result do
+            {:deny_and_interrupt, reason} ->
+              response = build_response(request_id, subtype, {:deny, reason})
+              {:handled_with_interrupt, response}
+
             {tag, _} when tag in [:allow, :deny, :result] ->
               response = build_response(request_id, subtype, result)
               {:handled, response}
@@ -128,6 +140,7 @@ defmodule ClaudeSDK.ControlRouter do
             tool_name: tool_name,
             input: input,
             request_id: request["request_id"] || "",
+            permission_suggestions: request["permission_suggestions"],
             raw_request: request
           }
 
@@ -140,11 +153,14 @@ defmodule ClaudeSDK.ControlRouter do
         :allow ->
           {:allow, %{}}
 
-        {:allow, permissions} when is_map(permissions) ->
-          {:allow, permissions}
+        {:allow, opts} when is_map(opts) or is_list(opts) ->
+          {:allow, normalize_allow_opts(opts)}
 
         :deny ->
           {:deny, "Permission denied"}
+
+        {:deny, reason, :interrupt} when is_binary(reason) ->
+          {:deny_and_interrupt, reason}
 
         {:deny, reason} when is_binary(reason) ->
           {:deny, reason}
@@ -286,7 +302,31 @@ defmodule ClaudeSDK.ControlRouter do
   defp normalize_handler_result(:deny), do: {:deny, "Permission denied"}
   defp normalize_handler_result(:ok), do: {:result, %{}}
   defp normalize_handler_result({:ok, map}) when is_map(map), do: {:result, map}
+  defp normalize_handler_result({:deny_and_interrupt, _} = result), do: result
   defp normalize_handler_result(other), do: other
+
+  # Convert snake_case permission opts to camelCase keys expected by the CLI.
+  defp normalize_allow_opts(opts) when is_list(opts), do: normalize_allow_opts(Map.new(opts))
+
+  defp normalize_allow_opts(opts) when is_map(opts) do
+    result = %{}
+
+    result =
+      case Map.get(opts, :updated_input) || Map.get(opts, "updatedInput") do
+        nil -> result
+        input when is_map(input) -> Map.put(result, :updatedInput, input)
+        _ -> result
+      end
+
+    result =
+      case Map.get(opts, :updated_permissions) || Map.get(opts, "updatedPermissions") do
+        nil -> result
+        perms when is_list(perms) -> Map.put(result, :updatedPermissions, perms)
+        _ -> result
+      end
+
+    result
+  end
 
   defp build_error_response(request_id, message) do
     %{

@@ -128,7 +128,7 @@ defmodule ClaudeSDK.Client do
     Stream.resource(
       fn -> start_query(client, prompt, parent_tool_use_id, tool_use_result) end,
       fn state -> receive_client_messages(state, client) end,
-      fn _state -> finish_query(client) end
+      fn state -> finish_query(client, state) end
     )
   end
 
@@ -309,6 +309,8 @@ defmodule ClaudeSDK.Client do
         after
           try do
             close(client)
+          rescue
+            _ -> :ok
           catch
             :exit, _ -> :ok
           end
@@ -395,7 +397,9 @@ defmodule ClaudeSDK.Client do
     }
 
     user_message =
-      if tool_use_result, do: Map.put(user_message, :tool_use_result, tool_use_result), else: user_message
+      if tool_use_result,
+        do: Map.put(user_message, :tool_use_result, tool_use_result),
+        else: user_message
 
     send_to_cli(state, user_message)
 
@@ -566,6 +570,10 @@ defmodule ClaudeSDK.Client do
       {:handled, response} ->
         send_to_cli(state, response)
         {:noreply, state}
+
+      {:handled_with_interrupt, response} ->
+        send_to_cli(state, response)
+        do_interrupt(state)
 
       {:unhandled, _} ->
         maybe_forward_to_caller(raw, state)
@@ -760,6 +768,10 @@ defmodule ClaudeSDK.Client do
                  server_info: server_info
              }}
 
+          {:error, {:cli_exited, {:error, %ClaudeSDK.ProcessExitError{} = e}}} ->
+            Internal.safe_stop_subprocess(pid)
+            {:error, e}
+
           {:error, reason} ->
             Internal.safe_stop_subprocess(pid)
             {:error, reason}
@@ -811,12 +823,51 @@ defmodule ClaudeSDK.Client do
     end
   end
 
-  defp finish_query(client) do
+  defp finish_query(client, state) do
     try do
       GenServer.call(client, :finish_query, 5_000)
     catch
       :exit, _ -> :ok
     end
+
+    # Flush any stale messages for this generation from the caller's mailbox
+    # to prevent unbounded mailbox growth across repeated queries.
+    gen = extract_gen(state)
+    if gen, do: flush_stale_messages(gen)
+  end
+
+  defp extract_gen({:streaming, _timeout, _client, gen}), do: gen
+  defp extract_gen(_), do: nil
+
+  defp flush_stale_messages(gen) do
+    receive do
+      {:client_message, ^gen, _} -> flush_stale_messages(gen)
+      {:client_exit, ^gen, _} -> :ok
+    after
+      0 -> :ok
+    end
+  end
+
+  defp do_interrupt(%{state: :streaming} = state) do
+    interrupt_msg = %{
+      type: "control_request",
+      request_id: Internal.generate_request_id(),
+      request: %{subtype: "interrupt"}
+    }
+
+    send_to_cli(state, interrupt_msg)
+
+    if state.active_caller && is_pid(state.active_caller) do
+      send(state.active_caller, {:client_exit, state.query_gen, :interrupted})
+    end
+
+    demonitor_caller(state)
+    {:noreply, %{state | state: :connected, active_caller: nil, caller_monitor: nil}}
+  end
+
+  defp do_interrupt(state) do
+    # Not streaming — interrupt is a no-op (deny response was already sent)
+    {:noreply, state}
   end
 
   defp send_to_cli(%{subprocess: pid, transport_module: mod}, message) do

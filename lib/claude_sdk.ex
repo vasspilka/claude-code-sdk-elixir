@@ -178,6 +178,9 @@ defmodule ClaudeSDK do
         for msg <- buffered_messages, do: send(self(), {:claude_message, msg})
         :ok
 
+      {:error, {:cli_exited, {:error, %ClaudeSDK.ProcessExitError{} = e}}} ->
+        raise e
+
       {:error, {:cli_exited, reason}} ->
         raise ClaudeSDK.TransportError,
           reason: reason,
@@ -228,6 +231,18 @@ defmodule ClaudeSDK do
           {:handled, response} ->
             transport_mod.send_message(pid, response)
             {[], state}
+
+          {:handled_with_interrupt, response} ->
+            transport_mod.send_message(pid, response)
+
+            interrupt_msg = %{
+              type: "control_request",
+              request_id: Internal.generate_request_id(),
+              request: %{subtype: "interrupt"}
+            }
+
+            transport_mod.send_message(pid, interrupt_msg)
+            {:halt, state}
 
           {:unhandled, _} ->
             case MessageParser.parse(raw) do

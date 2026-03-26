@@ -95,6 +95,36 @@ defmodule ClaudeSDK.QueryError do
   end
 end
 
+defmodule ClaudeSDK.ProcessExitError do
+  @moduledoc """
+  Raised when the Claude CLI subprocess exits with a non-zero status.
+
+  Provides structured access to the exit code for diagnostics. Stderr is
+  not captured by Erlang ports by default — use `Options.log_file` or
+  `Options.extra_args: ["--log-file", path]` to capture CLI output.
+
+  ## Fields
+
+  - `message` — Human-readable error message.
+  - `exit_code` — The integer exit status from the CLI process.
+  """
+  defexception [:message, :exit_code]
+
+  @impl true
+  def exception(opts) do
+    exit_code = Keyword.get(opts, :exit_code)
+
+    message =
+      Keyword.get(
+        opts,
+        :message,
+        "CLI subprocess exited with status #{exit_code}"
+      )
+
+    %__MODULE__{message: message, exit_code: exit_code}
+  end
+end
+
 defmodule ClaudeSDK.TimeoutError do
   @moduledoc """
   Raised when a CLI operation times out.
