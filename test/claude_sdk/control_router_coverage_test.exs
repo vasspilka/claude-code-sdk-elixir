@@ -257,12 +257,18 @@ defmodule ClaudeSDK.ControlRouterCoverageTest do
     @tag :capture_log
     test "non-function entries in list are skipped" do
       hooks = %{"PreToolUse" => ["not a function", fn _input -> {:ok, %{valid: true}} end]}
-      handlers = ControlRouter.build_handlers(%{can_use_tool: nil, mcp_tool_index: %{}, hooks: hooks})
+
+      handlers =
+        ControlRouter.build_handlers(%{can_use_tool: nil, mcp_tool_index: %{}, hooks: hooks})
 
       raw = %{
         "type" => "control_request",
         "request_id" => "req_mixed_list",
-        "request" => %{"subtype" => "hook_callback", "hook_event" => "PreToolUse", "hook_input" => %{}}
+        "request" => %{
+          "subtype" => "hook_callback",
+          "hook_event" => "PreToolUse",
+          "hook_input" => %{}
+        }
       }
 
       {:handled, response} = ControlRouter.dispatch(raw, handlers)
@@ -272,13 +278,24 @@ defmodule ClaudeSDK.ControlRouterCoverageTest do
 
   describe "hook callback returning non-result value" do
     test "non-result hook callback returns in list are handled" do
-      hooks = %{"PreToolUse" => [fn _input -> {:ok, %{first: true}} end, fn _input -> :unexpected_atom end]}
-      handlers = ControlRouter.build_handlers(%{can_use_tool: nil, mcp_tool_index: %{}, hooks: hooks})
+      hooks = %{
+        "PreToolUse" => [
+          fn _input -> {:ok, %{first: true}} end,
+          fn _input -> :unexpected_atom end
+        ]
+      }
+
+      handlers =
+        ControlRouter.build_handlers(%{can_use_tool: nil, mcp_tool_index: %{}, hooks: hooks})
 
       raw = %{
         "type" => "control_request",
         "request_id" => "req_non_result",
-        "request" => %{"subtype" => "hook_callback", "hook_event" => "PreToolUse", "hook_input" => %{}}
+        "request" => %{
+          "subtype" => "hook_callback",
+          "hook_event" => "PreToolUse",
+          "hook_input" => %{}
+        }
       }
 
       {:handled, _response} = ControlRouter.dispatch(raw, handlers)
@@ -288,25 +305,43 @@ defmodule ClaudeSDK.ControlRouterCoverageTest do
   describe "normalize_hook_result catch-all" do
     test "unexpected hook result falls through to empty result" do
       hooks = %{"PreToolUse" => fn _input -> {:something, :weird} end}
-      handlers = ControlRouter.build_handlers(%{can_use_tool: nil, mcp_tool_index: %{}, hooks: hooks})
+
+      handlers =
+        ControlRouter.build_handlers(%{can_use_tool: nil, mcp_tool_index: %{}, hooks: hooks})
 
       raw = %{
         "type" => "control_request",
         "request_id" => "req_weird_hook",
-        "request" => %{"subtype" => "hook_callback", "hook_event" => "PreToolUse", "hook_input" => %{}}
+        "request" => %{
+          "subtype" => "hook_callback",
+          "hook_event" => "PreToolUse",
+          "hook_input" => %{}
+        }
       }
 
       {:handled, response} = ControlRouter.dispatch(raw, handlers)
-      assert response.response == %{}
+      assert response.response == %{request_id: "req_weird_hook"}
     end
   end
 
   describe "MCP handler with missing request fields" do
     test "handles missing server_name and jsonrpc_message gracefully" do
-      tool = %ClaudeSDK.MCP.Tool{name: "t", description: "d", input_schema: %{}, handler: fn _ -> {:ok, "ok"} end}
+      tool = %ClaudeSDK.MCP.Tool{
+        name: "t",
+        description: "d",
+        input_schema: %{},
+        handler: fn _ -> {:ok, "ok"} end
+      }
+
       server = ClaudeSDK.MCP.Server.create("s", "1.0", [tool])
       tool_index = ClaudeSDK.MCP.Server.build_tool_index([server])
-      handlers = ControlRouter.build_handlers(%{can_use_tool: nil, mcp_tool_index: tool_index})
+
+      handlers =
+        ControlRouter.build_handlers(%{
+          can_use_tool: nil,
+          mcp_tool_index: tool_index,
+          mcp_servers: [server]
+        })
 
       raw = %{
         "type" => "control_request",
@@ -356,17 +391,23 @@ defmodule ClaudeSDK.ControlRouterCoverageTest do
     @tag :capture_log
     test "hook callback that exits abnormally returns empty result" do
       hooks = %{"PreToolUse" => fn _input -> Process.exit(self(), :kill) end}
-      handlers = ControlRouter.build_handlers(%{can_use_tool: nil, mcp_tool_index: %{}, hooks: hooks})
+
+      handlers =
+        ControlRouter.build_handlers(%{can_use_tool: nil, mcp_tool_index: %{}, hooks: hooks})
 
       raw = %{
         "type" => "control_request",
         "request_id" => "req_hook_exit",
-        "request" => %{"subtype" => "hook_callback", "hook_event" => "PreToolUse", "hook_input" => %{}}
+        "request" => %{
+          "subtype" => "hook_callback",
+          "hook_event" => "PreToolUse",
+          "hook_input" => %{}
+        }
       }
 
       {:handled, response} = ControlRouter.dispatch(raw, handlers)
       assert response.type == "control_response"
-      assert response.response == %{}
+      assert response.response == %{request_id: "req_hook_exit"}
     end
   end
 
@@ -379,12 +420,17 @@ defmodule ClaudeSDK.ControlRouterCoverageTest do
         ]
       }
 
-      handlers = ControlRouter.build_handlers(%{can_use_tool: nil, mcp_tool_index: %{}, hooks: hooks})
+      handlers =
+        ControlRouter.build_handlers(%{can_use_tool: nil, mcp_tool_index: %{}, hooks: hooks})
 
       raw = %{
         "type" => "control_request",
         "request_id" => "req_nonresult_acc",
-        "request" => %{"subtype" => "hook_callback", "hook_event" => "PreToolUse", "hook_input" => %{}}
+        "request" => %{
+          "subtype" => "hook_callback",
+          "hook_event" => "PreToolUse",
+          "hook_input" => %{}
+        }
       }
 
       {:handled, _response} = ControlRouter.dispatch(raw, handlers)
@@ -394,12 +440,18 @@ defmodule ClaudeSDK.ControlRouterCoverageTest do
   describe "hook returning {:result, map} directly" do
     test "hook callback returning {:result, map} is passed through" do
       hooks = %{"PreToolUse" => fn _input -> {:result, %{direct_result: true}} end}
-      handlers = ControlRouter.build_handlers(%{can_use_tool: nil, mcp_tool_index: %{}, hooks: hooks})
+
+      handlers =
+        ControlRouter.build_handlers(%{can_use_tool: nil, mcp_tool_index: %{}, hooks: hooks})
 
       raw = %{
         "type" => "control_request",
         "request_id" => "req_direct_result",
-        "request" => %{"subtype" => "hook_callback", "hook_event" => "PreToolUse", "hook_input" => %{}}
+        "request" => %{
+          "subtype" => "hook_callback",
+          "hook_event" => "PreToolUse",
+          "hook_input" => %{}
+        }
       }
 
       {:handled, response} = ControlRouter.dispatch(raw, handlers)

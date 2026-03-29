@@ -19,7 +19,14 @@ defmodule ClaudeSDK.ControlRouterTest do
 
     test "registers mcp_message handler when tool index is non-empty" do
       tool_index = %{{"server", "tool"} => fn _args -> {:ok, "result"} end}
-      handlers = ControlRouter.build_handlers(%{can_use_tool: nil, mcp_tool_index: tool_index})
+      server = ClaudeSDK.MCP.Server.create("server", "1.0", [])
+
+      handlers =
+        ControlRouter.build_handlers(%{
+          can_use_tool: nil,
+          mcp_tool_index: tool_index,
+          mcp_servers: [server]
+        })
 
       assert Map.has_key?(handlers, "mcp_message")
     end
@@ -33,9 +40,14 @@ defmodule ClaudeSDK.ControlRouterTest do
     test "registers both handlers when both configured" do
       callback = fn _tool, _input -> :allow end
       tool_index = %{{"server", "tool"} => fn _args -> {:ok, "result"} end}
+      server = ClaudeSDK.MCP.Server.create("server", "1.0", [])
 
       handlers =
-        ControlRouter.build_handlers(%{can_use_tool: callback, mcp_tool_index: tool_index})
+        ControlRouter.build_handlers(%{
+          can_use_tool: callback,
+          mcp_tool_index: tool_index,
+          mcp_servers: [server]
+        })
 
       assert Map.has_key?(handlers, "can_use_tool")
       assert Map.has_key?(handlers, "mcp_message")
@@ -99,7 +111,7 @@ defmodule ClaudeSDK.ControlRouterTest do
       }
 
       assert {:handled, response} = ControlRouter.dispatch(raw, handlers)
-      assert response.response == %{data: "hello"}
+      assert response.response == %{data: "hello", request_id: "req_003"}
     end
   end
 
@@ -139,7 +151,7 @@ defmodule ClaudeSDK.ControlRouterTest do
       assert response == %{
                type: "control_response",
                request_id: "req_1",
-               response: payload
+               response: Map.put(payload, :request_id, "req_1")
              }
     end
   end
@@ -312,7 +324,7 @@ defmodule ClaudeSDK.ControlRouterTest do
       }
 
       assert {:handled, response} = ControlRouter.dispatch(raw, handlers)
-      assert response.response == %{}
+      assert response.response == %{request_id: "req_no_hook"}
     end
 
     test "arity-2 hook callback receives event and input" do

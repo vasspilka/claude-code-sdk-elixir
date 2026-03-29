@@ -120,7 +120,7 @@ defmodule ClaudeSDK.ControlRouter do
     %{
       type: "control_response",
       request_id: request_id,
-      response: payload
+      response: Map.put(payload, :request_id, request_id)
     }
   end
 
@@ -187,11 +187,11 @@ defmodule ClaudeSDK.ControlRouter do
 
   defp maybe_add_permission_handler(handlers, _opts), do: handlers
 
-  defp maybe_add_mcp_handler(handlers, %{mcp_tool_index: tool_index})
-       when map_size(tool_index) > 0 do
+  defp maybe_add_mcp_handler(handlers, %{mcp_tool_index: tool_index, mcp_servers: servers})
+       when is_list(servers) and length(servers) > 0 do
     handler = fn request ->
       server_name = request["server_name"] || ""
-      jsonrpc = request["jsonrpc_message"] || %{}
+      jsonrpc = request["message"] || request["jsonrpc_message"] || %{}
 
       ClaudeSDK.MCP.Server.handle_jsonrpc(server_name, jsonrpc, tool_index)
     end

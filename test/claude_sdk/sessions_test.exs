@@ -447,10 +447,19 @@ defmodule ClaudeSDK.SessionsTest do
       with_config_dir(tmp_dir, fn ->
         lines = [
           "not valid json",
-          Jason.encode!(%{"type" => "user", "uuid" => "u1", "message" => %{"content" => "Hello"}}),
+          Jason.encode!(%{
+            "type" => "user",
+            "uuid" => "u1",
+            "message" => %{"content" => "Hello"}
+          }),
           "{broken",
-          Jason.encode!(%{"type" => "assistant", "uuid" => "a1", "message" => %{"content" => "Hi back"}})
+          Jason.encode!(%{
+            "type" => "assistant",
+            "uuid" => "a1",
+            "message" => %{"content" => "Hi back"}
+          })
         ]
+
         {project_dir, _} = setup_session(tmp_dir, "malformed-session", lines)
         messages = Sessions.get_session_messages("malformed-session", directory: project_dir)
         assert length(messages) == 2
@@ -465,11 +474,20 @@ defmodule ClaudeSDK.SessionsTest do
       with_config_dir(tmp_dir, fn ->
         lines = [
           Jason.encode!(%{"type" => "system", "data" => "init"}),
-          Jason.encode!(%{"type" => "user", "uuid" => "u1", "message" => %{"content" => "Hello"}}),
+          Jason.encode!(%{
+            "type" => "user",
+            "uuid" => "u1",
+            "message" => %{"content" => "Hello"}
+          }),
           Jason.encode!(%{"type" => "custom-title", "customTitle" => "My Title"}),
           Jason.encode!(%{"type" => "tag", "tag" => "v1"}),
-          Jason.encode!(%{"type" => "assistant", "uuid" => "a1", "message" => %{"content" => "Hi"}})
+          Jason.encode!(%{
+            "type" => "assistant",
+            "uuid" => "a1",
+            "message" => %{"content" => "Hi"}
+          })
         ]
+
         {project_dir, _} = setup_session(tmp_dir, "filter-session", lines)
         messages = Sessions.get_session_messages("filter-session", directory: project_dir)
         assert length(messages) == 2
@@ -484,8 +502,14 @@ defmodule ClaudeSDK.SessionsTest do
       with_config_dir(tmp_dir, fn ->
         lines = [
           Jason.encode!(%{"type" => "user", "uuid" => "u1"}),
-          Jason.encode!(%{"type" => "assistant", "uuid" => "a1", "session_id" => "alt-id", "message" => %{"content" => "Hi"}})
+          Jason.encode!(%{
+            "type" => "assistant",
+            "uuid" => "a1",
+            "session_id" => "alt-id",
+            "message" => %{"content" => "Hi"}
+          })
         ]
+
         {project_dir, _} = setup_session(tmp_dir, "missing-fields", lines)
         messages = Sessions.get_session_messages("missing-fields", directory: project_dir)
         assert length(messages) == 2
@@ -502,6 +526,7 @@ defmodule ClaudeSDK.SessionsTest do
           Jason.encode!(%{"type" => "system", "data" => "init"}),
           Jason.encode!(%{"type" => "assistant", "message" => %{"content" => "Hello"}})
         ]
+
         {project_dir, _} = setup_session(tmp_dir, "no-prompt", lines)
         info = Sessions.get_session_info("no-prompt", directory: project_dir)
         assert info.first_prompt == nil
@@ -516,6 +541,7 @@ defmodule ClaudeSDK.SessionsTest do
           Jason.encode!(%{"type" => "user", "message" => %{"content" => "Hello"}}),
           Jason.encode!(%{"type" => "assistant", "message" => %{"content" => "Hi"}})
         ]
+
         {project_dir, _} = setup_session(tmp_dir, "no-title", lines)
         info = Sessions.get_session_info("no-title", directory: project_dir)
         assert info.custom_title == nil

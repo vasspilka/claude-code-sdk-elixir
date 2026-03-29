@@ -104,10 +104,10 @@ defmodule ClaudeSDK.MCP.ServerTest do
       }
 
       assert {:result, response} = Server.handle_jsonrpc("test-server", jsonrpc, index)
-      assert response.jsonrpc_response["id"] == 1
-      assert response.jsonrpc_response["result"]["isError"] == false
+      assert response.mcp_response["id"] == 1
+      assert response.mcp_response["result"]["isError"] == false
 
-      [content_block] = response.jsonrpc_response["result"]["content"]
+      [content_block] = response.mcp_response["result"]["content"]
       assert content_block["type"] == "text"
       assert content_block["text"] == "Hello, Alice!"
     end
@@ -121,8 +121,8 @@ defmodule ClaudeSDK.MCP.ServerTest do
       }
 
       assert {:result, response} = Server.handle_jsonrpc("test-server", jsonrpc, index)
-      assert response.jsonrpc_response["error"]["code"] == -32601
-      assert response.jsonrpc_response["error"]["message"] =~ "Tool not found"
+      assert response.mcp_response["error"]["code"] == -32601
+      assert response.mcp_response["error"]["message"] =~ "Tool not found"
     end
 
     test "returns error for unknown server", %{index: index} do
@@ -134,7 +134,7 @@ defmodule ClaudeSDK.MCP.ServerTest do
       }
 
       assert {:result, response} = Server.handle_jsonrpc("wrong-server", jsonrpc, index)
-      assert response.jsonrpc_response["error"]["code"] == -32601
+      assert response.mcp_response["error"]["code"] == -32601
     end
 
     test "handles handler returning {:error, reason}" do
@@ -156,9 +156,9 @@ defmodule ClaudeSDK.MCP.ServerTest do
       }
 
       assert {:result, response} = Server.handle_jsonrpc("err-server", jsonrpc, index)
-      assert response.jsonrpc_response["result"]["isError"] == true
+      assert response.mcp_response["result"]["isError"] == true
 
-      [content] = response.jsonrpc_response["result"]["content"]
+      [content] = response.mcp_response["result"]["content"]
       assert content["text"] == "Something broke"
     end
 
@@ -171,7 +171,7 @@ defmodule ClaudeSDK.MCP.ServerTest do
       }
 
       assert {:result, response} = Server.handle_jsonrpc("test-server", jsonrpc, index)
-      [content] = response.jsonrpc_response["result"]["content"]
+      [content] = response.mcp_response["result"]["content"]
       assert content["text"] == "7"
     end
 
@@ -194,7 +194,7 @@ defmodule ClaudeSDK.MCP.ServerTest do
       }
 
       assert {:result, response} = Server.handle_jsonrpc("map-server", jsonrpc, index)
-      [content] = response.jsonrpc_response["result"]["content"]
+      [content] = response.mcp_response["result"]["content"]
       assert {:ok, %{"status" => "ok"}} = Jason.decode(content["text"])
     end
 
@@ -206,7 +206,7 @@ defmodule ClaudeSDK.MCP.ServerTest do
       }
 
       assert {:result, response} = Server.handle_jsonrpc("test-server", jsonrpc, index)
-      tools = response.jsonrpc_response["result"]["tools"]
+      tools = response.message["result"]["tools"]
       assert length(tools) == 2
 
       tool_names = Enum.map(tools, & &1["name"]) |> Enum.sort()
@@ -225,7 +225,7 @@ defmodule ClaudeSDK.MCP.ServerTest do
       jsonrpc = %{"jsonrpc" => "2.0", "id" => 10, "method" => "tools/list"}
 
       assert {:result, response} = Server.handle_jsonrpc("server-a", jsonrpc, index)
-      tools = response.jsonrpc_response["result"]["tools"]
+      tools = response.message["result"]["tools"]
       assert length(tools) == 1
       assert hd(tools)["name"] == "greet"
     end
@@ -238,7 +238,7 @@ defmodule ClaudeSDK.MCP.ServerTest do
       }
 
       assert {:result, response} = Server.handle_jsonrpc("test-server", jsonrpc, index)
-      assert response.jsonrpc_response["error"]["code"] == -32601
+      assert response.message["error"]["code"] == -32601
     end
 
     @tag :capture_log
@@ -261,9 +261,9 @@ defmodule ClaudeSDK.MCP.ServerTest do
       }
 
       assert {:result, response} = Server.handle_jsonrpc("crash-server", jsonrpc, index)
-      assert response.jsonrpc_response["result"]["isError"] == true
+      assert response.mcp_response["result"]["isError"] == true
 
-      [content] = response.jsonrpc_response["result"]["content"]
+      [content] = response.mcp_response["result"]["content"]
       assert content["text"] =~ "Tool handler error: internal error"
     end
 
@@ -305,7 +305,7 @@ defmodule ClaudeSDK.MCP.ServerTest do
       }
 
       assert {:result, response} = Server.handle_jsonrpc("large-server", jsonrpc, index)
-      [content] = response.jsonrpc_response["result"]["content"]
+      [content] = response.mcp_response["result"]["content"]
       assert content["text"] =~ "truncated: result exceeded 1MB limit"
       assert byte_size(content["text"]) < 1_100_000
     end

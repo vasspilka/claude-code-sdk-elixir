@@ -199,6 +199,7 @@ defmodule ClaudeSDK.OptionsTest do
     test "rejects --permission-prompt-tool" do
       assert {:error, msg} =
                Options.validate(%Options{extra_args: ["--permission-prompt-tool"]})
+
       assert msg =~ "extra_args must not contain"
     end
 

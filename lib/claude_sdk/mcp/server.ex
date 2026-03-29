@@ -120,7 +120,7 @@ defmodule ClaudeSDK.MCP.Server do
       nil ->
         {:result,
          %{
-           jsonrpc_response: %{
+           mcp_response: %{
              "jsonrpc" => "2.0",
              "id" => id,
              "error" => %{
@@ -135,7 +135,7 @@ defmodule ClaudeSDK.MCP.Server do
           {:error, validation_error} ->
             {:result,
              %{
-               jsonrpc_response: %{
+               mcp_response: %{
                  "jsonrpc" => "2.0",
                  "id" => id,
                  "result" => %{
@@ -155,7 +155,7 @@ defmodule ClaudeSDK.MCP.Server do
 
                   {:result,
                    %{
-                     jsonrpc_response: %{
+                     mcp_response: %{
                        "jsonrpc" => "2.0",
                        "id" => id,
                        "result" => %{
@@ -168,7 +168,7 @@ defmodule ClaudeSDK.MCP.Server do
                 {:error, reason} ->
                   {:result,
                    %{
-                     jsonrpc_response: %{
+                     mcp_response: %{
                        "jsonrpc" => "2.0",
                        "id" => id,
                        "result" => %{
@@ -186,7 +186,7 @@ defmodule ClaudeSDK.MCP.Server do
 
                 {:result,
                  %{
-                   jsonrpc_response: %{
+                   mcp_response: %{
                      "jsonrpc" => "2.0",
                      "id" => id,
                      "result" => %{
@@ -219,7 +219,7 @@ defmodule ClaudeSDK.MCP.Server do
 
     {:result,
      %{
-       jsonrpc_response: %{
+       message: %{
          "jsonrpc" => "2.0",
          "id" => id,
          "result" => %{"tools" => tools}
@@ -227,10 +227,32 @@ defmodule ClaudeSDK.MCP.Server do
      }}
   end
 
+  def handle_jsonrpc(server_name, %{"method" => "initialize", "id" => id}, tool_index) do
+    # Find the server version from the tool index keys
+    version =
+      tool_index
+      |> Enum.find_value("1.0", fn {{sn, _}, _} ->
+        if sn == server_name, do: "1.0"
+      end)
+
+    {:result,
+     %{
+       message: %{
+         "jsonrpc" => "2.0",
+         "id" => id,
+         "result" => %{
+           "protocolVersion" => "2025-11-25",
+           "capabilities" => %{"tools" => %{}},
+           "serverInfo" => %{"name" => server_name, "version" => version}
+         }
+       }
+     }}
+  end
+
   def handle_jsonrpc(_server_name, %{"id" => id}, _tool_index) do
     {:result,
      %{
-       jsonrpc_response: %{
+       message: %{
          "jsonrpc" => "2.0",
          "id" => id,
          "error" => %{

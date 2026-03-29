@@ -998,9 +998,11 @@ defmodule ClaudeSDK.ClientCoverageTest do
       opts = %Options{cli_path: @mock_cli_multiturn}
       {:ok, client} = Client.start_link(options: opts)
       :ok = Client.connect(client)
+
       messages =
         Client.query(client, "result of tool", tool_use_result: %{"tool_use_id" => "tu_123"})
         |> Enum.to_list()
+
       assert length(messages) > 0
       Client.close(client)
     end
@@ -1040,7 +1042,8 @@ defmodule ClaudeSDK.ClientCoverageTest do
 
       send(
         client,
-        {:claude_message, %{"type" => "control_response", "response" => %{"status" => "connected"}}}
+        {:claude_message,
+         %{"type" => "control_response", "response" => %{"status" => "connected"}}}
       )
 
       assert {:ok, %{"status" => "connected"}} = Task.await(task)
@@ -1062,7 +1065,11 @@ defmodule ClaudeSDK.ClientCoverageTest do
       send(
         client,
         {:claude_message,
-         %{"type" => "control_response", "request_id" => "stale-req-id", "response" => %{"stale" => true}}}
+         %{
+           "type" => "control_response",
+           "request_id" => "stale-req-id",
+           "response" => %{"stale" => true}
+         }}
       )
 
       Process.sleep(50)
@@ -1096,9 +1103,11 @@ defmodule ClaudeSDK.ClientCoverageTest do
       opts = %Options{cli_path: @mock_cli_multiturn}
       {:ok, client} = Client.start_link(options: opts)
       :ok = Client.connect(client)
+
       messages =
         Client.query(client, "nested response", parent_tool_use_id: "tu_parent_123")
         |> Enum.to_list()
+
       assert length(messages) > 0
       Client.close(client)
     end
@@ -1243,9 +1252,7 @@ defmodule ClaudeSDK.ClientCoverageTest do
       # Now send correct response (backwards compat, no request_id)
       send(
         client,
-        {:claude_message,
-         %{"type" => "control_response", "response" => %{"success" => true}}
-        }
+        {:claude_message, %{"type" => "control_response", "response" => %{"success" => true}}}
       )
 
       assert :ok = Task.await(task)
