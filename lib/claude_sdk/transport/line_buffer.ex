@@ -26,22 +26,23 @@ defmodule ClaudeSDK.Transport.LineBuffer do
   @doc """
   Accumulate a partial chunk (from a Port `:noeol` message).
 
-  Returns the updated buffer. No messages are extracted — partial chunks
-  are accumulated until `flush/2` is called with the final `:eol` data.
+  Returns `{:ok, updated_buffer}` on success, or `{:error, :buffer_overflow}`
+  if the accumulated data exceeds the 10MB limit. On overflow the buffer is
+  reset (the in-progress message is lost) and an error-level log is emitted.
   """
-  @spec accumulate(t(), String.t()) :: t()
+  @spec accumulate(t(), String.t()) :: {:ok, t()} | {:error, :buffer_overflow}
   def accumulate(%__MODULE__{buffer: buf}, chunk) when is_binary(chunk) do
     full = buf <> chunk
 
     if byte_size(full) > @max_buffer_bytes do
-      Logger.warning(
+      Logger.error(
         "LineBuffer exceeded #{div(@max_buffer_bytes, 1_048_576)}MB limit " <>
-          "(#{byte_size(full)} bytes), discarding buffer"
+          "(#{byte_size(full)} bytes), discarding buffer — data has been lost"
       )
 
-      %__MODULE__{buffer: ""}
+      {:error, :buffer_overflow}
     else
-      %__MODULE__{buffer: full}
+      {:ok, %__MODULE__{buffer: full}}
     end
   end
 
@@ -72,9 +73,9 @@ defmodule ClaudeSDK.Transport.LineBuffer do
     full = buf <> data
 
     if byte_size(full) > @max_buffer_bytes do
-      Logger.warning(
+      Logger.error(
         "LineBuffer exceeded #{div(@max_buffer_bytes, 1_048_576)}MB limit " <>
-          "(#{byte_size(full)} bytes), discarding buffer"
+          "(#{byte_size(full)} bytes), discarding buffer — data has been lost"
       )
 
       {%__MODULE__{buffer: ""}, []}

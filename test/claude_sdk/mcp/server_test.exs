@@ -264,7 +264,7 @@ defmodule ClaudeSDK.MCP.ServerTest do
       assert response.jsonrpc_response["result"]["isError"] == true
 
       [content] = response.jsonrpc_response["result"]["content"]
-      assert content["text"] =~ "Tool handler error: kaboom"
+      assert content["text"] =~ "Tool handler error: internal error"
     end
 
     test "JSONRPC notification (no id) returns empty result" do

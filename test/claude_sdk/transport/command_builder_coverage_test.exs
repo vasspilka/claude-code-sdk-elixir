@@ -133,4 +133,127 @@ defmodule ClaudeSDK.Transport.CommandBuilderCoverageTest do
       refute "--tools" in args
     end
   end
+
+  describe "add_json_opt with ThinkingConfig struct" do
+    test "encodes ThinkingConfig struct as JSON" do
+      config = %ClaudeSDK.Types.ThinkingConfig{type: "enabled", budget_tokens: 5000}
+      opts = %Options{json_schema: config}
+      args = CommandBuilder.build_args(opts)
+      assert "--json-schema" in args
+      idx = Enum.find_index(args, &(&1 == "--json-schema"))
+      json = Enum.at(args, idx + 1)
+      decoded = Jason.decode!(json)
+      assert decoded["type"] == "enabled"
+    end
+  end
+
+  describe "add_json_opt with SandboxSettings struct" do
+    test "encodes SandboxSettings struct as JSON" do
+      settings = %ClaudeSDK.Types.SandboxSettings{enabled: true, network: "deny"}
+      opts = %Options{json_schema: settings}
+      args = CommandBuilder.build_args(opts)
+      assert "--json-schema" in args
+      idx = Enum.find_index(args, &(&1 == "--json-schema"))
+      json = Enum.at(args, idx + 1)
+      decoded = Jason.decode!(json)
+      assert decoded["enabled"] == true
+    end
+  end
+
+  describe "add_max_thinking_tokens suppressed by thinking config" do
+    test "max_thinking_tokens is ignored when thinking config is set" do
+      opts = %Options{
+        max_thinking_tokens: 10000,
+        thinking: %ClaudeSDK.Types.ThinkingConfig{type: "enabled", budget_tokens: 5000}
+      }
+
+      args = CommandBuilder.build_args(opts)
+      # --max-thinking-tokens should come from thinking config, not standalone
+      pairs = Enum.zip(args, tl(args) ++ [nil])
+      refute Enum.any?(pairs, fn {f, v} -> f == "--max-thinking-tokens" && v == "10000" end)
+    end
+  end
+
+  describe "add_thinking with map config" do
+    test "thinking map with nil budget_tokens omits --max-thinking-tokens" do
+      opts = %Options{thinking: %{"type" => "adaptive"}}
+      args = CommandBuilder.build_args(opts)
+      assert "--thinking" in args
+      idx = Enum.find_index(args, &(&1 == "--thinking"))
+      assert Enum.at(args, idx + 1) == "adaptive"
+      refute "--max-thinking-tokens" in args
+    end
+
+    test "thinking map with budget_tokens includes --max-thinking-tokens" do
+      opts = %Options{thinking: %{"type" => "enabled", "budget_tokens" => 8000}}
+      args = CommandBuilder.build_args(opts)
+      assert "--thinking" in args
+      assert "--max-thinking-tokens" in args
+      idx = Enum.find_index(args, &(&1 == "--max-thinking-tokens"))
+      assert Enum.at(args, idx + 1) == "8000"
+    end
+  end
+
+  describe "add_thinking with non-map/non-struct" do
+    test "non-map thinking value is ignored" do
+      opts = %Options{thinking: "enabled"}
+      args = CommandBuilder.build_args(opts)
+      refute "--thinking" in args
+    end
+  end
+
+  describe "add_settings with string settings" do
+    test "string settings are passed through as raw" do
+      opts = %Options{settings: "/path/to/settings.json"}
+      args = CommandBuilder.build_args(opts)
+      assert "--settings" in args
+      idx = Enum.find_index(args, &(&1 == "--settings"))
+      assert Enum.at(args, idx + 1) == "/path/to/settings.json"
+    end
+  end
+
+  describe "add_settings with string settings and sandbox" do
+    test "string settings merged with sandbox drops raw key" do
+      opts = %Options{
+        settings: "/path/to/settings.json",
+        sandbox: %{"type" => "docker"}
+      }
+
+      args = CommandBuilder.build_args(opts)
+      assert "--settings" in args
+      idx = Enum.find_index(args, &(&1 == "--settings"))
+      json = Enum.at(args, idx + 1)
+      decoded = Jason.decode!(json)
+      assert decoded["sandbox"]["type"] == "docker"
+      refute Map.has_key?(decoded, "_raw")
+    end
+  end
+
+  describe "add_output_format catch-all" do
+    test "non-map output_format is ignored" do
+      opts = %Options{output_format: "not a map"}
+      args = CommandBuilder.build_args(opts)
+      refute "--json-schema" in args
+    end
+  end
+
+  describe "add_settings with nil settings and SandboxSettings struct" do
+    test "sandbox struct without settings works" do
+      opts = %Options{sandbox: %ClaudeSDK.Types.SandboxSettings{enabled: true}}
+      args = CommandBuilder.build_args(opts)
+      assert "--settings" in args
+      idx = Enum.find_index(args, &(&1 == "--settings"))
+      json = Enum.at(args, idx + 1)
+      decoded = Jason.decode!(json)
+      assert decoded["sandbox"]["enabled"] == true
+    end
+  end
+
+  describe "add_settings with both nil" do
+    test "nil settings and nil sandbox produces no --settings flag" do
+      opts = %Options{settings: nil, sandbox: nil}
+      args = CommandBuilder.build_args(opts)
+      refute "--settings" in args
+    end
+  end
 end

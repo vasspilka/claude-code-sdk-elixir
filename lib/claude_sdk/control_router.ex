@@ -85,7 +85,7 @@ defmodule ClaudeSDK.ControlRouter do
           e ->
             Logger.warning("Handler for #{subtype} raised: #{Exception.message(e)}")
 
-            {:handled, build_error_response(request_id, Exception.message(e))}
+            {:handled, build_error_response(request_id)}
         end
     end
   end
@@ -128,13 +128,15 @@ defmodule ClaudeSDK.ControlRouter do
 
   defp maybe_add_permission_handler(handlers, %{can_use_tool: nil}), do: handlers
 
-  defp maybe_add_permission_handler(handlers, %{can_use_tool: callback})
+  defp maybe_add_permission_handler(handlers, %{can_use_tool: callback} = opts)
        when is_function(callback, 2) or is_function(callback, 3) do
+    permission_timeout = Map.get(opts, :hook_timeout_ms, 30_000)
+
     handler = fn request ->
       tool_name = request["tool_name"] || ""
       input = request["input"] || %{}
 
-      result =
+      callback_fn = fn ->
         if is_function(callback, 3) do
           context = %ClaudeSDK.Types.ToolPermissionContext{
             tool_name: tool_name,
@@ -148,6 +150,9 @@ defmodule ClaudeSDK.ControlRouter do
         else
           callback.(tool_name, input)
         end
+      end
+
+      result = run_permission_callback(callback_fn, permission_timeout)
 
       case result do
         :allow ->
@@ -256,6 +261,43 @@ defmodule ClaudeSDK.ControlRouter do
     run_with_timeout(fn -> callback.(hook_event, hook_input) end, timeout)
   end
 
+  defp run_permission_callback(fun, timeout) do
+    caller = self()
+    ref = make_ref()
+
+    {pid, monitor_ref} =
+      spawn_monitor(fn ->
+        try do
+          result = fun.()
+          send(caller, {ref, {:ok, result}})
+        rescue
+          e ->
+            send(caller, {ref, {:error, Exception.message(e)}})
+        end
+      end)
+
+    receive do
+      {^ref, {:ok, result}} ->
+        Process.demonitor(monitor_ref, [:flush])
+        result
+
+      {^ref, {:error, message}} ->
+        Process.demonitor(monitor_ref, [:flush])
+        Logger.warning("can_use_tool callback raised: #{message}")
+        {:deny, "Permission callback error"}
+
+      {:DOWN, ^monitor_ref, :process, ^pid, reason} ->
+        Logger.warning("can_use_tool callback exited: #{inspect(reason)}")
+        {:deny, "Permission callback crashed"}
+    after
+      timeout ->
+        Process.demonitor(monitor_ref, [:flush])
+        Process.exit(pid, :kill)
+        Logger.warning("can_use_tool callback timed out after #{timeout}ms")
+        {:deny, "Permission callback timed out"}
+    end
+  end
+
   defp run_with_timeout(fun, timeout) do
     caller = self()
     ref = make_ref()
@@ -306,33 +348,26 @@ defmodule ClaudeSDK.ControlRouter do
   defp normalize_handler_result(other), do: other
 
   # Convert snake_case permission opts to camelCase keys expected by the CLI.
+  # Unknown keys are passed through for forward compatibility with new CLI features.
   defp normalize_allow_opts(opts) when is_list(opts), do: normalize_allow_opts(Map.new(opts))
 
   defp normalize_allow_opts(opts) when is_map(opts) do
-    result = %{}
+    snake_to_camel = %{
+      updated_input: :updatedInput,
+      updated_permissions: :updatedPermissions
+    }
 
-    result =
-      case Map.get(opts, :updated_input) || Map.get(opts, "updatedInput") do
-        nil -> result
-        input when is_map(input) -> Map.put(result, :updatedInput, input)
-        _ -> result
-      end
-
-    result =
-      case Map.get(opts, :updated_permissions) || Map.get(opts, "updatedPermissions") do
-        nil -> result
-        perms when is_list(perms) -> Map.put(result, :updatedPermissions, perms)
-        _ -> result
-      end
-
-    result
+    Enum.reduce(opts, %{}, fn {key, value}, acc ->
+      normalized_key = Map.get(snake_to_camel, key, key)
+      Map.put(acc, normalized_key, value)
+    end)
   end
 
-  defp build_error_response(request_id, message) do
+  defp build_error_response(request_id) do
     %{
       type: "control_response",
       request_id: request_id,
-      response: %{allowed: false, reason: "Handler error: #{message}"}
+      response: %{allowed: false, reason: "Handler error: internal error"}
     }
   end
 

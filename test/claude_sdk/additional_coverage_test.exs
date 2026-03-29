@@ -21,7 +21,7 @@ defmodule ClaudeSDK.AdditionalCoverageTest do
 
     test "flushes accumulated buffer with eol remainder" do
       buf = LineBuffer.new()
-      buf = LineBuffer.accumulate(buf, ~s({"type":))
+      {:ok, buf} = LineBuffer.accumulate(buf, ~s({"type":))
       {new_buf, {:ok, parsed}} = LineBuffer.flush(buf, ~s("done"}))
       assert new_buf.buffer == ""
       assert parsed["type"] == "done"
@@ -37,17 +37,16 @@ defmodule ClaudeSDK.AdditionalCoverageTest do
   describe "LineBuffer.accumulate/2" do
     test "concatenates chunks" do
       buf = LineBuffer.new()
-      buf = LineBuffer.accumulate(buf, "chunk1")
-      buf = LineBuffer.accumulate(buf, "chunk2")
+      {:ok, buf} = LineBuffer.accumulate(buf, "chunk1")
+      {:ok, buf} = LineBuffer.accumulate(buf, "chunk2")
       assert buf.buffer == "chunk1chunk2"
     end
 
     @tag :capture_log
-    test "discards buffer when exceeding max size" do
+    test "returns error when exceeding max size" do
       buf = LineBuffer.new()
       large_chunk = String.duplicate("x", 10_485_761)
-      buf = LineBuffer.accumulate(buf, large_chunk)
-      assert buf.buffer == ""
+      assert {:error, :buffer_overflow} = LineBuffer.accumulate(buf, large_chunk)
     end
   end
 
@@ -71,7 +70,8 @@ defmodule ClaudeSDK.AdditionalCoverageTest do
         end
       }
 
-      handlers = ControlRouter.build_handlers(%{can_use_tool: nil, mcp_tool_index: %{}, hooks: hooks})
+      handlers =
+        ControlRouter.build_handlers(%{can_use_tool: nil, mcp_tool_index: %{}, hooks: hooks})
 
       raw = %{
         "type" => "control_request",
@@ -100,7 +100,8 @@ defmodule ClaudeSDK.AdditionalCoverageTest do
         end
       }
 
-      handlers = ControlRouter.build_handlers(%{can_use_tool: nil, mcp_tool_index: %{}, hooks: hooks})
+      handlers =
+        ControlRouter.build_handlers(%{can_use_tool: nil, mcp_tool_index: %{}, hooks: hooks})
 
       raw = %{
         "type" => "control_request",
@@ -126,7 +127,8 @@ defmodule ClaudeSDK.AdditionalCoverageTest do
         ]
       }
 
-      handlers = ControlRouter.build_handlers(%{can_use_tool: nil, mcp_tool_index: %{}, hooks: hooks})
+      handlers =
+        ControlRouter.build_handlers(%{can_use_tool: nil, mcp_tool_index: %{}, hooks: hooks})
 
       raw = %{
         "type" => "control_request",
@@ -155,7 +157,8 @@ defmodule ClaudeSDK.AdditionalCoverageTest do
         ]
       }
 
-      handlers = ControlRouter.build_handlers(%{can_use_tool: nil, mcp_tool_index: %{}, hooks: hooks})
+      handlers =
+        ControlRouter.build_handlers(%{can_use_tool: nil, mcp_tool_index: %{}, hooks: hooks})
 
       raw = %{
         "type" => "control_request",
@@ -178,7 +181,8 @@ defmodule ClaudeSDK.AdditionalCoverageTest do
         "PreToolUse" => fn _input -> :ok end
       }
 
-      handlers = ControlRouter.build_handlers(%{can_use_tool: nil, mcp_tool_index: %{}, hooks: hooks})
+      handlers =
+        ControlRouter.build_handlers(%{can_use_tool: nil, mcp_tool_index: %{}, hooks: hooks})
 
       raw = %{
         "type" => "control_request",
@@ -201,7 +205,8 @@ defmodule ClaudeSDK.AdditionalCoverageTest do
         "BadHook" => "not a function"
       }
 
-      handlers = ControlRouter.build_handlers(%{can_use_tool: nil, mcp_tool_index: %{}, hooks: hooks})
+      handlers =
+        ControlRouter.build_handlers(%{can_use_tool: nil, mcp_tool_index: %{}, hooks: hooks})
 
       raw = %{
         "type" => "control_request",
@@ -224,7 +229,8 @@ defmodule ClaudeSDK.AdditionalCoverageTest do
         "CrashHook" => fn _input -> raise "boom" end
       }
 
-      handlers = ControlRouter.build_handlers(%{can_use_tool: nil, mcp_tool_index: %{}, hooks: hooks})
+      handlers =
+        ControlRouter.build_handlers(%{can_use_tool: nil, mcp_tool_index: %{}, hooks: hooks})
 
       raw = %{
         "type" => "control_request",
@@ -352,7 +358,9 @@ defmodule ClaudeSDK.AdditionalCoverageTest do
 
   describe "ControlRouter build_handlers with empty hooks" do
     test "does not add hook handler for empty hooks" do
-      handlers = ControlRouter.build_handlers(%{can_use_tool: nil, mcp_tool_index: %{}, hooks: %{}})
+      handlers =
+        ControlRouter.build_handlers(%{can_use_tool: nil, mcp_tool_index: %{}, hooks: %{}})
+
       refute Map.has_key?(handlers, "hook_callback")
     end
 
@@ -416,7 +424,9 @@ defmodule ClaudeSDK.AdditionalCoverageTest do
       {:ok, client} = Client.start_link(options: opts)
       :ok = Client.connect(client)
 
-      {:ok, _timeout, _gen} = GenServer.call(client, {:start_query, %{prompt: "test", caller: self()}})
+      {:ok, _timeout, _gen} =
+        GenServer.call(client, {:start_query, %{prompt: "test", caller: self()}})
+
       assert {:error, :busy} = Client.disconnect(client)
 
       receive do
@@ -457,7 +467,9 @@ defmodule ClaudeSDK.AdditionalCoverageTest do
       {:ok, client} = Client.start_link(options: opts)
       :ok = Client.connect(client)
 
-      {:ok, _timeout, _gen} = GenServer.call(client, {:start_query, %{prompt: "test", caller: self()}})
+      {:ok, _timeout, _gen} =
+        GenServer.call(client, {:start_query, %{prompt: "test", caller: self()}})
+
       assert {:error, :busy} = Client.stop_task(client, "task-123")
 
       receive do
@@ -498,7 +510,9 @@ defmodule ClaudeSDK.AdditionalCoverageTest do
       {:ok, client} = Client.start_link(options: opts)
       :ok = Client.connect(client)
 
-      {:ok, _timeout, _gen} = GenServer.call(client, {:start_query, %{prompt: "test", caller: self()}})
+      {:ok, _timeout, _gen} =
+        GenServer.call(client, {:start_query, %{prompt: "test", caller: self()}})
+
       assert {:error, :busy} = Client.set_permission_mode(client, :plan)
 
       receive do
@@ -539,7 +553,9 @@ defmodule ClaudeSDK.AdditionalCoverageTest do
       {:ok, client} = Client.start_link(options: opts)
       :ok = Client.connect(client)
 
-      {:ok, _timeout, _gen} = GenServer.call(client, {:start_query, %{prompt: "test", caller: self()}})
+      {:ok, _timeout, _gen} =
+        GenServer.call(client, {:start_query, %{prompt: "test", caller: self()}})
+
       assert {:error, :busy} = Client.add_mcp_server(client, "s", %{})
 
       receive do
@@ -577,7 +593,9 @@ defmodule ClaudeSDK.AdditionalCoverageTest do
       {:ok, client} = Client.start_link(options: opts)
       :ok = Client.connect(client)
 
-      {:ok, _timeout, _gen} = GenServer.call(client, {:start_query, %{prompt: "test", caller: self()}})
+      {:ok, _timeout, _gen} =
+        GenServer.call(client, {:start_query, %{prompt: "test", caller: self()}})
+
       assert {:error, :busy} = Client.remove_mcp_server(client, "s")
 
       receive do
@@ -658,7 +676,8 @@ defmodule ClaudeSDK.AdditionalCoverageTest do
           end
         end)
 
-      {:ok, _timeout, _gen} = GenServer.call(client, {:start_query, %{prompt: "test2", caller: consumer}})
+      {:ok, _timeout, _gen} =
+        GenServer.call(client, {:start_query, %{prompt: "test2", caller: consumer}})
 
       # Kill the consumer while streaming
       Process.exit(consumer, :kill)
@@ -725,7 +744,10 @@ defmodule ClaudeSDK.AdditionalCoverageTest do
 
     test "start_query when disconnected" do
       {:ok, client} = Client.start_link()
-      assert {:error, :not_connected} = GenServer.call(client, {:start_query, %{prompt: "test", caller: self()}})
+
+      assert {:error, :not_connected} =
+               GenServer.call(client, {:start_query, %{prompt: "test", caller: self()}})
+
       Client.close(client)
     end
   end

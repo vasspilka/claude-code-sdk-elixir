@@ -86,7 +86,7 @@ defmodule ClaudeSDK.MCPIntegrationTest do
       refute Map.has_key?(index, {"server-b", "greet"})
     end
 
-    test "MCP tool called with missing arguments handles gracefully" do
+    test "MCP tool called with missing required arguments returns validation error" do
       server =
         ClaudeSDK.create_mcp_server("test-server", "1.0", [
           %Tool{
@@ -106,7 +106,42 @@ defmodule ClaudeSDK.MCPIntegrationTest do
 
       index = ClaudeSDK.MCP.Server.build_tool_index([server])
 
-      # Call with empty arguments (missing "name")
+      # Call with empty arguments (missing required "name")
+      jsonrpc = %{
+        "jsonrpc" => "2.0",
+        "id" => 1,
+        "method" => "tools/call",
+        "params" => %{"name" => "greet", "arguments" => %{}}
+      }
+
+      assert {:result, response} =
+               ClaudeSDK.MCP.Server.handle_jsonrpc("test-server", jsonrpc, index)
+
+      assert response.jsonrpc_response["result"]["isError"] == true
+      [content] = response.jsonrpc_response["result"]["content"]
+      assert content["text"] =~ "missing required fields: name"
+    end
+
+    test "MCP tool called with missing optional arguments handles gracefully" do
+      server =
+        ClaudeSDK.create_mcp_server("test-server", "1.0", [
+          %Tool{
+            name: "greet",
+            description: "Say hello",
+            input_schema: %{
+              "type" => "object",
+              "properties" => %{"name" => %{"type" => "string"}}
+            },
+            handler: fn args ->
+              name = args["name"] || "stranger"
+              {:ok, "Hello, #{name}!"}
+            end
+          }
+        ])
+
+      index = ClaudeSDK.MCP.Server.build_tool_index([server])
+
+      # Call with empty arguments (no required fields)
       jsonrpc = %{
         "jsonrpc" => "2.0",
         "id" => 1,

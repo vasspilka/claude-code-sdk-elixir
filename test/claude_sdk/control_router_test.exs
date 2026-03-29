@@ -359,7 +359,7 @@ defmodule ClaudeSDK.ControlRouterTest do
       assert response.type == "control_response"
       assert response.request_id == "req_crash"
       assert response.response.allowed == false
-      assert response.response.reason =~ "Handler error: boom"
+      assert response.response.reason =~ "Handler error"
     end
 
     @tag :capture_log
@@ -391,7 +391,7 @@ defmodule ClaudeSDK.ControlRouterTest do
 
       assert {:handled, response} = ControlRouter.dispatch(raw, handlers)
       assert response.response.allowed == false
-      assert response.response.reason =~ "Handler error:"
+      assert response.response.reason =~ "Handler error"
     end
   end
 end

@@ -167,4 +167,46 @@ defmodule ClaudeSDK.Transport.SubprocessCoverageTest do
       refute Process.alive?(pid)
     end
   end
+
+  describe "caller death monitoring" do
+    test "subprocess stops when caller process dies" do
+      test_pid = self()
+
+      caller =
+        spawn(fn ->
+          {:ok, sub_pid} =
+            Subprocess.start(caller: self(), options: %Options{cli_path: @mock_cli_path})
+
+          send(test_pid, {:sub_pid, sub_pid})
+
+          receive do
+            :stop -> :ok
+          after
+            5000 -> :ok
+          end
+        end)
+
+      sub_pid =
+        receive do
+          {:sub_pid, pid} -> pid
+        after
+          5000 -> flunk("Subprocess not started")
+        end
+
+      assert Process.alive?(sub_pid)
+      Process.exit(caller, :kill)
+      Process.sleep(100)
+      refute Process.alive?(sub_pid)
+    end
+  end
+
+  describe "start_link" do
+    test "starts a linked subprocess" do
+      {:ok, pid} =
+        Subprocess.start_link(caller: self(), options: %Options{cli_path: @mock_cli_path})
+
+      assert Process.alive?(pid)
+      Subprocess.stop(pid)
+    end
+  end
 end

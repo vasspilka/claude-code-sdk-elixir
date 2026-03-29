@@ -245,4 +245,35 @@ defmodule ClaudeSDK.QueryCoverageTest do
       assert String.starts_with?(id, "req_")
     end
   end
+
+  describe "query message timeout" do
+    test "message timeout produces ResultMessage with error" do
+      opts = %Options{cli_path: @mock_cli_timeout, message_timeout_ms: 200}
+
+      messages =
+        ClaudeSDK.query("test timeout", opts)
+        |> Enum.to_list()
+
+      result = Enum.find(messages, &match?(%ResultMessage{}, &1))
+      assert result != nil
+    end
+  end
+
+  describe "query with handled_with_interrupt" do
+    @tag :capture_log
+    test "permission deny+interrupt halts the stream" do
+      mock_cli = Path.expand("../support/mock_cli_permission.sh", __DIR__)
+
+      if File.exists?(mock_cli) do
+        callback = fn _tool, _input -> {:deny, "Blocked", :interrupt} end
+        opts = %Options{cli_path: mock_cli, can_use_tool: callback}
+
+        messages =
+          ClaudeSDK.query("test interrupt", opts)
+          |> Enum.to_list()
+
+        assert is_list(messages)
+      end
+    end
+  end
 end

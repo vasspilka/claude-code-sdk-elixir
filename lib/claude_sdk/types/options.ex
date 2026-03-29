@@ -337,7 +337,8 @@ defmodule ClaudeSDK.Types.Options do
          :ok <- validate_session_options(opts),
          :ok <- validate_permission_options(opts),
          :ok <- validate_output_options(opts),
-         :ok <- validate_setting_sources(opts.setting_sources) do
+         :ok <- validate_setting_sources(opts.setting_sources),
+         :ok <- validate_extra_args(opts.extra_args) do
       :ok
     end
   end
@@ -421,4 +422,31 @@ defmodule ClaudeSDK.Types.Options do
 
   defp validate_setting_sources(other),
     do: {:error, "setting_sources must be nil or a list, got: #{inspect(other)}"}
+
+  # Flags that extra_args must not override — these are set by the SDK or
+  # by explicit Options fields and overriding them could bypass security controls.
+  @restricted_extra_args [
+    "--permission-mode",
+    "--output-format",
+    "--input-format",
+    "--permission-prompt-tool"
+  ]
+
+  defp validate_extra_args([]), do: :ok
+  defp validate_extra_args(nil), do: :ok
+
+  defp validate_extra_args(args) when is_list(args) do
+    conflicts = Enum.filter(args, &(&1 in @restricted_extra_args))
+
+    if conflicts == [] do
+      :ok
+    else
+      {:error,
+       "extra_args must not contain #{inspect(conflicts)} — " <>
+         "these flags are managed by the SDK. Use the corresponding Options fields instead."}
+    end
+  end
+
+  defp validate_extra_args(other),
+    do: {:error, "extra_args must be a list of strings, got: #{inspect(other)}"}
 end

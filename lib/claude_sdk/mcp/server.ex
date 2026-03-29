@@ -130,41 +130,9 @@ defmodule ClaudeSDK.MCP.Server do
            }
          }}
 
-      %Tool{handler: handler} ->
-        try do
-          case handler.(arguments) do
-            {:ok, result} ->
-              content = format_result(result)
-
-              {:result,
-               %{
-                 jsonrpc_response: %{
-                   "jsonrpc" => "2.0",
-                   "id" => id,
-                   "result" => %{
-                     "content" => content,
-                     "isError" => false
-                   }
-                 }
-               }}
-
-            {:error, reason} ->
-              {:result,
-               %{
-                 jsonrpc_response: %{
-                   "jsonrpc" => "2.0",
-                   "id" => id,
-                   "result" => %{
-                     "content" => [%{"type" => "text", "text" => to_string(reason)}],
-                     "isError" => true
-                   }
-                 }
-               }}
-          end
-        rescue
-          e ->
-            Logger.warning("MCP tool handler for #{tool_name} raised: #{Exception.message(e)}")
-
+      %Tool{handler: handler, input_schema: schema} ->
+        case validate_arguments(arguments, schema) do
+          {:error, validation_error} ->
             {:result,
              %{
                jsonrpc_response: %{
@@ -172,12 +140,67 @@ defmodule ClaudeSDK.MCP.Server do
                  "id" => id,
                  "result" => %{
                    "content" => [
-                     %{"type" => "text", "text" => "Tool handler error: #{Exception.message(e)}"}
+                     %{"type" => "text", "text" => "Validation error: #{validation_error}"}
                    ],
                    "isError" => true
                  }
                }
              }}
+
+          :ok ->
+            try do
+              case handler.(arguments) do
+                {:ok, result} ->
+                  content = format_result(result)
+
+                  {:result,
+                   %{
+                     jsonrpc_response: %{
+                       "jsonrpc" => "2.0",
+                       "id" => id,
+                       "result" => %{
+                         "content" => content,
+                         "isError" => false
+                       }
+                     }
+                   }}
+
+                {:error, reason} ->
+                  {:result,
+                   %{
+                     jsonrpc_response: %{
+                       "jsonrpc" => "2.0",
+                       "id" => id,
+                       "result" => %{
+                         "content" => [%{"type" => "text", "text" => to_string(reason)}],
+                         "isError" => true
+                       }
+                     }
+                   }}
+              end
+            rescue
+              e ->
+                Logger.warning(
+                  "MCP tool handler for #{tool_name} raised: #{Exception.message(e)}"
+                )
+
+                {:result,
+                 %{
+                   jsonrpc_response: %{
+                     "jsonrpc" => "2.0",
+                     "id" => id,
+                     "result" => %{
+                       "content" => [
+                         %{
+                           "type" => "text",
+                           "text" => "Tool handler error: internal error"
+                         }
+                       ],
+                       "isError" => true
+                     }
+                   }
+                 }}
+            end
         end
     end
   end
@@ -229,6 +252,69 @@ defmodule ClaudeSDK.MCP.Server do
     Logger.debug("Received unrecognized JSONRPC message (no 'id' or 'method' field)")
     {:result, %{}}
   end
+
+  # Basic validation of tool arguments against the tool's input schema.
+  # Checks required fields and top-level types without a full JSON Schema library.
+  defp validate_arguments(_arguments, nil), do: :ok
+
+  defp validate_arguments(arguments, schema) when is_map(schema) and is_map(arguments) do
+    with :ok <- validate_required_fields(arguments, schema) do
+      validate_property_types(arguments, schema)
+    end
+  end
+
+  defp validate_arguments(_arguments, _schema), do: :ok
+
+  defp validate_required_fields(arguments, schema) do
+    required = Map.get(schema, "required", [])
+
+    missing =
+      Enum.reject(required, fn field ->
+        Map.has_key?(arguments, field)
+      end)
+
+    if missing == [] do
+      :ok
+    else
+      {:error, "missing required fields: #{Enum.join(missing, ", ")}"}
+    end
+  end
+
+  defp validate_property_types(arguments, schema) do
+    properties = Map.get(schema, "properties", %{})
+
+    error =
+      Enum.find_value(arguments, fn {key, value} ->
+        case Map.get(properties, key) do
+          nil -> nil
+          prop_schema -> check_type(key, value, Map.get(prop_schema, "type"))
+        end
+      end)
+
+    if error, do: {:error, error}, else: :ok
+  end
+
+  defp check_type(_key, _value, nil), do: nil
+  defp check_type(_key, value, "string") when is_binary(value), do: nil
+  defp check_type(_key, value, "number") when is_number(value), do: nil
+  defp check_type(_key, value, "integer") when is_integer(value), do: nil
+  defp check_type(_key, value, "boolean") when is_boolean(value), do: nil
+  defp check_type(_key, value, "object") when is_map(value), do: nil
+  defp check_type(_key, value, "array") when is_list(value), do: nil
+  defp check_type(_key, _value, "null"), do: nil
+
+  defp check_type(key, value, expected_type) do
+    "field #{inspect(key)} expected type #{expected_type}, got #{inspect_type(value)}"
+  end
+
+  defp inspect_type(v) when is_binary(v), do: "string"
+  defp inspect_type(v) when is_integer(v), do: "integer"
+  defp inspect_type(v) when is_float(v), do: "number"
+  defp inspect_type(v) when is_boolean(v), do: "boolean"
+  defp inspect_type(v) when is_map(v), do: "object"
+  defp inspect_type(v) when is_list(v), do: "array"
+  defp inspect_type(nil), do: "null"
+  defp inspect_type(_), do: "unknown"
 
   # 1 MB size limit for MCP results
   @max_result_bytes 1_048_576

@@ -94,7 +94,9 @@ defmodule ClaudeSDK.ClientCoverageTest do
       {:ok, client} = Client.start_link(options: opts)
       :ok = Client.connect(client)
 
-      {:ok, _timeout, _gen} = GenServer.call(client, {:start_query, %{prompt: "test", caller: self()}})
+      {:ok, _timeout, _gen} =
+        GenServer.call(client, {:start_query, %{prompt: "test", caller: self()}})
+
       assert {:error, :busy} = Client.reconnect_mcp_server(client, "s")
 
       receive do
@@ -127,7 +129,8 @@ defmodule ClaudeSDK.ClientCoverageTest do
       {:ok, client} = Client.start_link(options: opts)
       :ok = Client.connect(client)
 
-      {:ok, _timeout, _gen} = GenServer.call(client, {:start_query, %{prompt: "test", caller: self()}})
+      {:ok, _timeout, _gen} =
+        GenServer.call(client, {:start_query, %{prompt: "test", caller: self()}})
 
       assert {:error, :busy} =
                Client.toggle_mcp_server(client, "s", true)
@@ -162,7 +165,9 @@ defmodule ClaudeSDK.ClientCoverageTest do
       {:ok, client} = Client.start_link(options: opts)
       :ok = Client.connect(client)
 
-      {:ok, _timeout, _gen} = GenServer.call(client, {:start_query, %{prompt: "test", caller: self()}})
+      {:ok, _timeout, _gen} =
+        GenServer.call(client, {:start_query, %{prompt: "test", caller: self()}})
+
       assert {:error, :busy} = Client.get_mcp_status(client)
 
       receive do
@@ -392,7 +397,8 @@ defmodule ClaudeSDK.ClientCoverageTest do
       {:ok, client} = Client.start_link(options: opts)
       :ok = Client.connect(client)
 
-      {:ok, _timeout, _gen} = GenServer.call(client, {:start_query, %{prompt: "test", caller: self()}})
+      {:ok, _timeout, _gen} =
+        GenServer.call(client, {:start_query, %{prompt: "test", caller: self()}})
 
       # Simulate CLI exit
       send(client, {:claude_exit, :normal})
@@ -411,7 +417,8 @@ defmodule ClaudeSDK.ClientCoverageTest do
       {:ok, client} = Client.start_link(options: opts)
       :ok = Client.connect(client)
 
-      {:ok, timeout, gen} = GenServer.call(client, {:start_query, %{prompt: "test", caller: self()}})
+      {:ok, timeout, gen} =
+        GenServer.call(client, {:start_query, %{prompt: "test", caller: self()}})
 
       # Send a message that will fail to parse (missing type)
       send(self(), {:client_message, gen, %{"no_type" => true}})
@@ -453,7 +460,8 @@ defmodule ClaudeSDK.ClientCoverageTest do
       _messages = Client.query(client, "hello") |> Enum.to_list()
 
       # Put into streaming state manually
-      {:ok, _timeout, _gen} = GenServer.call(client, {:start_query, %{prompt: "test", caller: self()}})
+      {:ok, _timeout, _gen} =
+        GenServer.call(client, {:start_query, %{prompt: "test", caller: self()}})
 
       # Now interrupt
       assert :ok = Client.interrupt(client)
@@ -474,7 +482,8 @@ defmodule ClaudeSDK.ClientCoverageTest do
       {:ok, client} = Client.start_link(options: opts)
       :ok = Client.connect(client)
 
-      {:ok, _timeout, _gen} = GenServer.call(client, {:start_query, %{prompt: "test", caller: self()}})
+      {:ok, _timeout, _gen} =
+        GenServer.call(client, {:start_query, %{prompt: "test", caller: self()}})
 
       assert {:error, :busy} = Client.connect(client)
 
@@ -524,7 +533,8 @@ defmodule ClaudeSDK.ClientCoverageTest do
       {:ok, client} = Client.start_link(options: opts)
       :ok = Client.connect(client)
 
-      {:ok, _timeout, _gen} = GenServer.call(client, {:start_query, %{prompt: "test", caller: self()}})
+      {:ok, _timeout, _gen} =
+        GenServer.call(client, {:start_query, %{prompt: "test", caller: self()}})
 
       # Send an unhandled control_request — should be forwarded to caller
       send(
@@ -636,7 +646,8 @@ defmodule ClaudeSDK.ClientCoverageTest do
       {:ok, client} = Client.start_link(options: opts)
       :ok = Client.connect(client)
 
-      {:ok, _timeout, _gen} = GenServer.call(client, {:start_query, %{prompt: "test", caller: self()}})
+      {:ok, _timeout, _gen} =
+        GenServer.call(client, {:start_query, %{prompt: "test", caller: self()}})
 
       assert {:error, :busy} =
                Client.rewind_files(client, "msg-123")
@@ -658,7 +669,9 @@ defmodule ClaudeSDK.ClientCoverageTest do
       {:ok, client} = Client.start_link(options: opts)
       :ok = Client.connect(client)
 
-      {:ok, _timeout, _gen} = GenServer.call(client, {:start_query, %{prompt: "test", caller: self()}})
+      {:ok, _timeout, _gen} =
+        GenServer.call(client, {:start_query, %{prompt: "test", caller: self()}})
+
       assert {:ok, info} = Client.get_server_info(client)
       assert is_map(info)
 
@@ -702,7 +715,8 @@ defmodule ClaudeSDK.ClientCoverageTest do
       Process.unlink(client)
 
       # Start streaming
-      {:ok, _timeout, _gen} = GenServer.call(client, {:start_query, %{prompt: "test", caller: self()}})
+      {:ok, _timeout, _gen} =
+        GenServer.call(client, {:start_query, %{prompt: "test", caller: self()}})
 
       # Kill the client
       Process.exit(client, :kill)
@@ -915,6 +929,326 @@ defmodule ClaudeSDK.ClientCoverageTest do
 
       assert {:error, {:cli_exited, _}} = Task.await(task)
 
+      Client.close(client)
+    end
+  end
+
+  describe "handled_with_interrupt control request" do
+    @tag :capture_log
+    test "handled_with_interrupt interrupts stream" do
+      callback = fn _tool, _input -> {:deny, "No way", :interrupt} end
+      opts = %Options{cli_path: @mock_cli_hang_on_control, can_use_tool: callback}
+      {:ok, client} = Client.start_link(options: opts)
+      :ok = Client.connect(client)
+      _messages = Client.query(client, "hello") |> Enum.to_list()
+
+      {:ok, _timeout, _gen} =
+        GenServer.call(client, {:start_query, %{prompt: "test", caller: self()}})
+
+      send(
+        client,
+        {:claude_message,
+         %{
+           "type" => "control_request",
+           "request_id" => "req_int_test",
+           "request" => %{
+             "subtype" => "can_use_tool",
+             "tool_name" => "Bash",
+             "input" => %{"command" => "rm -rf /"}
+           }
+         }}
+      )
+
+      assert_receive {:client_exit, _gen, :interrupted}, 1000
+      assert Client.connected?(client)
+      Client.close(client)
+    end
+  end
+
+  describe "do_interrupt when not streaming" do
+    @tag :capture_log
+    test "control_request with interrupt handler in connected state is a no-op" do
+      callback = fn _tool, _input -> {:deny, "No", :interrupt} end
+      opts = %Options{cli_path: @mock_cli_multiturn, can_use_tool: callback}
+      {:ok, client} = Client.start_link(options: opts)
+      :ok = Client.connect(client)
+
+      send(
+        client,
+        {:claude_message,
+         %{
+           "type" => "control_request",
+           "request_id" => "req_no_stream",
+           "request" => %{
+             "subtype" => "can_use_tool",
+             "tool_name" => "Bash",
+             "input" => %{}
+           }
+         }}
+      )
+
+      Process.sleep(50)
+      assert Client.connected?(client)
+      Client.close(client)
+    end
+  end
+
+  describe "query with tool_use_result" do
+    test "tool_use_result is included in user message" do
+      opts = %Options{cli_path: @mock_cli_multiturn}
+      {:ok, client} = Client.start_link(options: opts)
+      :ok = Client.connect(client)
+      messages =
+        Client.query(client, "result of tool", tool_use_result: %{"tool_use_id" => "tu_123"})
+        |> Enum.to_list()
+      assert length(messages) > 0
+      Client.close(client)
+    end
+  end
+
+  describe "backwards compat rewind response without request_id" do
+    @tag :capture_log
+    test "rewind response without request_id is handled" do
+      opts = %Options{cli_path: @mock_cli_hang_on_control}
+      {:ok, client} = Client.start_link(options: opts)
+      :ok = Client.connect(client)
+      _messages = Client.query(client, "hello") |> Enum.to_list()
+
+      task = Task.async(fn -> Client.rewind_files(client, "msg-compat") end)
+      Process.sleep(100)
+
+      send(
+        client,
+        {:claude_message, %{"type" => "control_response", "response" => %{"success" => true}}}
+      )
+
+      assert :ok = Task.await(task)
+      Client.close(client)
+    end
+  end
+
+  describe "backwards compat control response without request_id" do
+    @tag :capture_log
+    test "control response without request_id is handled" do
+      opts = %Options{cli_path: @mock_cli_hang_on_control}
+      {:ok, client} = Client.start_link(options: opts)
+      :ok = Client.connect(client)
+      _messages = Client.query(client, "hello") |> Enum.to_list()
+
+      task = Task.async(fn -> Client.get_mcp_status(client) end)
+      Process.sleep(100)
+
+      send(
+        client,
+        {:claude_message, %{"type" => "control_response", "response" => %{"status" => "connected"}}}
+      )
+
+      assert {:ok, %{"status" => "connected"}} = Task.await(task)
+      Client.close(client)
+    end
+  end
+
+  describe "stale control_response with mismatched request_id" do
+    @tag :capture_log
+    test "discards stale control_response and waits for correct one" do
+      opts = %Options{cli_path: @mock_cli_hang_on_control}
+      {:ok, client} = Client.start_link(options: opts)
+      :ok = Client.connect(client)
+      _messages = Client.query(client, "hello") |> Enum.to_list()
+
+      task = Task.async(fn -> Client.get_mcp_status(client) end)
+      Process.sleep(100)
+
+      send(
+        client,
+        {:claude_message,
+         %{"type" => "control_response", "request_id" => "stale-req-id", "response" => %{"stale" => true}}}
+      )
+
+      Process.sleep(50)
+
+      send(
+        client,
+        {:claude_message, %{"type" => "control_response", "response" => %{"correct" => true}}}
+      )
+
+      assert {:ok, %{"correct" => true}} = Task.await(task)
+      Client.close(client)
+    end
+  end
+
+  describe "control_timeout during awaiting_rewind" do
+    @tag :capture_log
+    test "rewind times out when no response arrives" do
+      opts = %Options{cli_path: @mock_cli_hang_on_control, control_timeout_ms: 100}
+      {:ok, client} = Client.start_link(options: opts)
+      :ok = Client.connect(client)
+      _messages = Client.query(client, "hello") |> Enum.to_list()
+
+      assert {:error, :control_timeout} = Client.rewind_files(client, "msg-timeout")
+      assert Client.connected?(client)
+      Client.close(client)
+    end
+  end
+
+  describe "query with parent_tool_use_id" do
+    test "parent_tool_use_id is forwarded in user message" do
+      opts = %Options{cli_path: @mock_cli_multiturn}
+      {:ok, client} = Client.start_link(options: opts)
+      :ok = Client.connect(client)
+      messages =
+        Client.query(client, "nested response", parent_tool_use_id: "tu_parent_123")
+        |> Enum.to_list()
+      assert length(messages) > 0
+      Client.close(client)
+    end
+  end
+
+  describe "set_model when connected" do
+    @tag :capture_log
+    test "sends control request to change model" do
+      opts = %Options{cli_path: @mock_cli_multiturn}
+      {:ok, client} = Client.start_link(options: opts)
+      :ok = Client.connect(client)
+      _messages = Client.query(client, "hello") |> Enum.to_list()
+      assert :ok = Client.set_model(client, "claude-sonnet-4-6")
+      Client.close(client)
+    end
+  end
+
+  describe "set_model when streaming" do
+    test "returns error when streaming" do
+      opts = %Options{cli_path: @mock_cli_multiturn}
+      {:ok, client} = Client.start_link(options: opts)
+      :ok = Client.connect(client)
+
+      {:ok, _timeout, _gen} =
+        GenServer.call(client, {:start_query, %{prompt: "test", caller: self()}})
+
+      assert {:error, :busy} = Client.set_model(client, "test-model")
+
+      receive do
+        {:client_message, _, _} -> :ok
+      after
+        1000 -> :ok
+      end
+
+      GenServer.call(client, :finish_query, 5_000)
+      Client.close(client)
+    end
+  end
+
+  describe "notify_caller_of_exit unexpected state" do
+    @tag :capture_log
+    test "cli_exit in connected state with no caller does not crash" do
+      opts = %Options{cli_path: @mock_cli_multiturn}
+      {:ok, client} = Client.start_link(options: opts)
+      :ok = Client.connect(client)
+
+      send(client, {:claude_exit, {:error, :test_exit}})
+      Process.sleep(50)
+
+      refute Client.connected?(client)
+      Client.close(client)
+    end
+  end
+
+  describe "rewind response with matching request_id" do
+    @tag :capture_log
+    test "rewind response with correct request_id is handled" do
+      hang_mock = Path.expand("../support/mock_cli_hang_on_control.sh", __DIR__)
+      opts = %Options{cli_path: hang_mock}
+      {:ok, client} = Client.start_link(options: opts)
+      :ok = Client.connect(client)
+      _messages = Client.query(client, "hello") |> Enum.to_list()
+
+      task = Task.async(fn -> Client.rewind_files(client, "msg-matching") end)
+      Process.sleep(100)
+
+      # Read the pending_request_id from the GenServer state
+      state = :sys.get_state(client)
+      request_id = state.pending_request_id
+
+      # Send response with the matching request_id
+      send(
+        client,
+        {:claude_message,
+         %{
+           "type" => "control_response",
+           "request_id" => request_id,
+           "response" => %{"success" => true}
+         }}
+      )
+
+      assert :ok = Task.await(task)
+      Client.close(client)
+    end
+  end
+
+  describe "control response with matching request_id" do
+    @tag :capture_log
+    test "control response with correct request_id is handled" do
+      hang_mock = Path.expand("../support/mock_cli_hang_on_control.sh", __DIR__)
+      opts = %Options{cli_path: hang_mock}
+      {:ok, client} = Client.start_link(options: opts)
+      :ok = Client.connect(client)
+      _messages = Client.query(client, "hello") |> Enum.to_list()
+
+      task = Task.async(fn -> Client.get_mcp_status(client) end)
+      Process.sleep(100)
+
+      state = :sys.get_state(client)
+      request_id = state.pending_request_id
+
+      send(
+        client,
+        {:claude_message,
+         %{
+           "type" => "control_response",
+           "request_id" => request_id,
+           "response" => %{"status" => "ok"}
+         }}
+      )
+
+      assert {:ok, %{"status" => "ok"}} = Task.await(task)
+      Client.close(client)
+    end
+  end
+
+  describe "stale control_response during awaiting_rewind" do
+    @tag :capture_log
+    test "discards stale response and then handles correct one" do
+      hang_mock = Path.expand("../support/mock_cli_hang_on_control.sh", __DIR__)
+      opts = %Options{cli_path: hang_mock}
+      {:ok, client} = Client.start_link(options: opts)
+      :ok = Client.connect(client)
+      _messages = Client.query(client, "hello") |> Enum.to_list()
+
+      task = Task.async(fn -> Client.rewind_files(client, "msg-stale-rewind") end)
+      Process.sleep(100)
+
+      # Send stale response with wrong request_id
+      send(
+        client,
+        {:claude_message,
+         %{
+           "type" => "control_response",
+           "request_id" => "wrong-id",
+           "response" => %{"success" => true}
+         }}
+      )
+
+      Process.sleep(50)
+
+      # Now send correct response (backwards compat, no request_id)
+      send(
+        client,
+        {:claude_message,
+         %{"type" => "control_response", "response" => %{"success" => true}}
+        }
+      )
+
+      assert :ok = Task.await(task)
       Client.close(client)
     end
   end

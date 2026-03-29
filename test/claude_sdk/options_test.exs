@@ -134,6 +134,87 @@ defmodule ClaudeSDK.OptionsTest do
     end
   end
 
+  describe "validate_timeout for hook_timeout_ms" do
+    test "returns error for invalid hook_timeout_ms" do
+      assert {:error, msg} = Options.validate(%Options{hook_timeout_ms: 0})
+      assert msg =~ "hook_timeout_ms must be a positive integer"
+    end
+
+    test "returns error for non-integer hook_timeout_ms" do
+      assert {:error, msg} = Options.validate(%Options{hook_timeout_ms: 1.5})
+      assert msg =~ "hook_timeout_ms must be a positive integer"
+    end
+  end
+
+  describe "validate_setting_sources" do
+    test "accepts nil" do
+      assert :ok = Options.validate(%Options{setting_sources: nil})
+    end
+
+    test "accepts empty list" do
+      assert :ok = Options.validate(%Options{setting_sources: []})
+    end
+
+    test "accepts valid sources" do
+      assert :ok = Options.validate(%Options{setting_sources: ["user", "project", "local"]})
+    end
+
+    test "rejects invalid source entries" do
+      assert {:error, msg} = Options.validate(%Options{setting_sources: ["user", "invalid"]})
+      assert msg =~ "setting_sources"
+      assert msg =~ "invalid"
+    end
+
+    test "rejects non-list setting_sources" do
+      assert {:error, msg} = Options.validate(%Options{setting_sources: "user"})
+      assert msg =~ "setting_sources must be nil or a list"
+    end
+  end
+
+  describe "validate_extra_args" do
+    test "accepts nil" do
+      assert :ok = Options.validate(%Options{extra_args: nil})
+    end
+
+    test "accepts empty list" do
+      assert :ok = Options.validate(%Options{extra_args: []})
+    end
+
+    test "accepts valid args" do
+      assert :ok = Options.validate(%Options{extra_args: ["--verbose", "--debug"]})
+    end
+
+    test "rejects restricted args" do
+      assert {:error, msg} = Options.validate(%Options{extra_args: ["--permission-mode"]})
+      assert msg =~ "extra_args must not contain"
+      assert msg =~ "--permission-mode"
+    end
+
+    test "rejects multiple restricted args" do
+      args = ["--output-format", "--input-format"]
+      assert {:error, msg} = Options.validate(%Options{extra_args: args})
+      assert msg =~ "extra_args must not contain"
+    end
+
+    test "rejects --permission-prompt-tool" do
+      assert {:error, msg} =
+               Options.validate(%Options{extra_args: ["--permission-prompt-tool"]})
+      assert msg =~ "extra_args must not contain"
+    end
+
+    test "rejects non-list extra_args" do
+      assert {:error, msg} = Options.validate(%Options{extra_args: "--verbose"})
+      assert msg =~ "extra_args must be a list of strings"
+    end
+  end
+
+  describe "validate_can_use_tool arity" do
+    test "rejects arity-1 function" do
+      assert {:error, msg} = Options.validate(%Options{can_use_tool: fn _x -> :allow end})
+      assert msg =~ "can_use_tool must be nil or a function of arity 2 or 3"
+    end
+  end
+
   describe "query/2 keyword list conversion" do
     test "rejects unknown keyword keys" do
       assert_raise ArgumentError, ~r/unknown options/, fn ->

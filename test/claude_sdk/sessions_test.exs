@@ -32,7 +32,9 @@ defmodule ClaudeSDK.SessionsTest do
     try do
       fun.()
     after
-      if original, do: System.put_env("CLAUDE_CONFIG_DIR", original), else: System.delete_env("CLAUDE_CONFIG_DIR")
+      if original,
+        do: System.put_env("CLAUDE_CONFIG_DIR", original),
+        else: System.delete_env("CLAUDE_CONFIG_DIR")
     end
   end
 
@@ -44,7 +46,13 @@ defmodule ClaudeSDK.SessionsTest do
     end
 
     test "lists sessions from project directory", %{tmp_dir: tmp_dir} do
-      user_line = Jason.encode!(%{"type" => "user", "message" => %{"content" => "Hello"}, "sessionId" => "s1"})
+      user_line =
+        Jason.encode!(%{
+          "type" => "user",
+          "message" => %{"content" => "Hello"},
+          "sessionId" => "s1"
+        })
+
       {project_dir, _} = setup_session(tmp_dir, "session-abc", [user_line])
 
       with_config_dir(tmp_dir, fn ->
@@ -128,7 +136,11 @@ defmodule ClaudeSDK.SessionsTest do
 
     test "extracts git branch and cwd from metadata", %{tmp_dir: tmp_dir} do
       lines = [
-        Jason.encode!(%{"type" => "system", "gitBranch" => "main", "cwd" => "/home/user/project"}),
+        Jason.encode!(%{
+          "type" => "system",
+          "gitBranch" => "main",
+          "cwd" => "/home/user/project"
+        }),
         Jason.encode!(%{"type" => "user", "message" => %{"content" => "Hi"}})
       ]
 
@@ -161,7 +173,11 @@ defmodule ClaudeSDK.SessionsTest do
       lines = [
         Jason.encode!(%{"type" => "system", "session_id" => "s1"}),
         Jason.encode!(%{"type" => "user", "uuid" => "u1", "message" => %{"content" => "Hello"}}),
-        Jason.encode!(%{"type" => "assistant", "uuid" => "a1", "message" => %{"content" => "Hi there"}}),
+        Jason.encode!(%{
+          "type" => "assistant",
+          "uuid" => "a1",
+          "message" => %{"content" => "Hi there"}
+        }),
         Jason.encode!(%{"type" => "user", "uuid" => "u2", "message" => %{"content" => "Thanks"}})
       ]
 
@@ -191,15 +207,25 @@ defmodule ClaudeSDK.SessionsTest do
     test "supports limit and offset", %{tmp_dir: tmp_dir} do
       lines = [
         Jason.encode!(%{"type" => "user", "uuid" => "u1", "message" => %{"content" => "Msg 1"}}),
-        Jason.encode!(%{"type" => "assistant", "uuid" => "a1", "message" => %{"content" => "Reply 1"}}),
+        Jason.encode!(%{
+          "type" => "assistant",
+          "uuid" => "a1",
+          "message" => %{"content" => "Reply 1"}
+        }),
         Jason.encode!(%{"type" => "user", "uuid" => "u2", "message" => %{"content" => "Msg 2"}}),
-        Jason.encode!(%{"type" => "assistant", "uuid" => "a2", "message" => %{"content" => "Reply 2"}})
+        Jason.encode!(%{
+          "type" => "assistant",
+          "uuid" => "a2",
+          "message" => %{"content" => "Reply 2"}
+        })
       ]
 
       {project_dir, _} = setup_session(tmp_dir, "paginated", lines)
 
       with_config_dir(tmp_dir, fn ->
-        messages = Sessions.get_session_messages("paginated", directory: project_dir, limit: 2, offset: 1)
+        messages =
+          Sessions.get_session_messages("paginated", directory: project_dir, limit: 2, offset: 1)
+
         assert length(messages) == 2
         assert Enum.at(messages, 0).type == "assistant"
         assert Enum.at(messages, 1).type == "user"
@@ -208,7 +234,11 @@ defmodule ClaudeSDK.SessionsTest do
 
     test "handles human type messages (alias for user)", %{tmp_dir: tmp_dir} do
       lines = [
-        Jason.encode!(%{"type" => "human", "uuid" => "h1", "message" => %{"content" => "Hello human type"}})
+        Jason.encode!(%{
+          "type" => "human",
+          "uuid" => "h1",
+          "message" => %{"content" => "Hello human type"}
+        })
       ]
 
       {project_dir, _} = setup_session(tmp_dir, "human-session", lines)
@@ -227,7 +257,8 @@ defmodule ClaudeSDK.SessionsTest do
       {project_dir, file_path} = setup_session(tmp_dir, "rename-session", [line])
 
       with_config_dir(tmp_dir, fn ->
-        assert :ok = Sessions.rename_session("rename-session", "New Title", directory: project_dir)
+        assert :ok =
+                 Sessions.rename_session("rename-session", "New Title", directory: project_dir)
 
         content = File.read!(file_path)
         lines = String.split(content, "\n", trim: true)
@@ -259,7 +290,10 @@ defmodule ClaudeSDK.SessionsTest do
       title_with_zwsp = "Hello\u200BWorld"
 
       with_config_dir(tmp_dir, fn ->
-        assert :ok = Sessions.rename_session("unicode-session", title_with_zwsp, directory: project_dir)
+        assert :ok =
+                 Sessions.rename_session("unicode-session", title_with_zwsp,
+                   directory: project_dir
+                 )
 
         content = File.read!(file_path)
         lines = String.split(content, "\n", trim: true)
@@ -367,13 +401,160 @@ defmodule ClaudeSDK.SessionsTest do
 
     test "rename_session delegates to Sessions", %{tmp_dir: tmp_dir} do
       with_config_dir(tmp_dir, fn ->
-        assert {:error, _} = ClaudeSDK.rename_session("nonexistent", "title", directory: "/nonexistent")
+        assert {:error, _} =
+                 ClaudeSDK.rename_session("nonexistent", "title", directory: "/nonexistent")
       end)
     end
 
     test "tag_session delegates to Sessions", %{tmp_dir: tmp_dir} do
       with_config_dir(tmp_dir, fn ->
-        assert {:error, _} = ClaudeSDK.tag_session("nonexistent", "tag", directory: "/nonexistent")
+        assert {:error, _} =
+                 ClaudeSDK.tag_session("nonexistent", "tag", directory: "/nonexistent")
+      end)
+    end
+  end
+
+  describe "sanitize_unicode edge cases" do
+    test "strips private-use characters", %{tmp_dir: tmp_dir} do
+      with_config_dir(tmp_dir, fn ->
+        line = Jason.encode!(%{"type" => "user", "message" => %{"content" => "Hi"}})
+        {project_dir, file_path} = setup_session(tmp_dir, "unicode-priv", [line])
+        title = "Hello\u{E000}World"
+        :ok = Sessions.rename_session("unicode-priv", title, directory: project_dir)
+        content = File.read!(file_path)
+        lines = String.split(content, "\n", trim: true)
+        last_entry = Jason.decode!(List.last(lines))
+        assert last_entry["customTitle"] == "HelloWorld"
+      end)
+    end
+
+    test "strips directional marks (Cf category)", %{tmp_dir: tmp_dir} do
+      with_config_dir(tmp_dir, fn ->
+        line = Jason.encode!(%{"type" => "user", "message" => %{"content" => "Hi"}})
+        {project_dir, file_path} = setup_session(tmp_dir, "unicode-bidi", [line])
+        title = "Hello\u200FWorld"
+        :ok = Sessions.rename_session("unicode-bidi", title, directory: project_dir)
+        content = File.read!(file_path)
+        lines = String.split(content, "\n", trim: true)
+        last_entry = Jason.decode!(List.last(lines))
+        assert last_entry["customTitle"] == "HelloWorld"
+      end)
+    end
+  end
+
+  describe "malformed JSONL" do
+    test "skips invalid JSON lines in session file", %{tmp_dir: tmp_dir} do
+      with_config_dir(tmp_dir, fn ->
+        lines = [
+          "not valid json",
+          Jason.encode!(%{"type" => "user", "uuid" => "u1", "message" => %{"content" => "Hello"}}),
+          "{broken",
+          Jason.encode!(%{"type" => "assistant", "uuid" => "a1", "message" => %{"content" => "Hi back"}})
+        ]
+        {project_dir, _} = setup_session(tmp_dir, "malformed-session", lines)
+        messages = Sessions.get_session_messages("malformed-session", directory: project_dir)
+        assert length(messages) == 2
+        assert Enum.at(messages, 0).type == "user"
+        assert Enum.at(messages, 1).type == "assistant"
+      end)
+    end
+  end
+
+  describe "build_conversation_chain filters" do
+    test "filters out non-conversation types", %{tmp_dir: tmp_dir} do
+      with_config_dir(tmp_dir, fn ->
+        lines = [
+          Jason.encode!(%{"type" => "system", "data" => "init"}),
+          Jason.encode!(%{"type" => "user", "uuid" => "u1", "message" => %{"content" => "Hello"}}),
+          Jason.encode!(%{"type" => "custom-title", "customTitle" => "My Title"}),
+          Jason.encode!(%{"type" => "tag", "tag" => "v1"}),
+          Jason.encode!(%{"type" => "assistant", "uuid" => "a1", "message" => %{"content" => "Hi"}})
+        ]
+        {project_dir, _} = setup_session(tmp_dir, "filter-session", lines)
+        messages = Sessions.get_session_messages("filter-session", directory: project_dir)
+        assert length(messages) == 2
+        types = Enum.map(messages, & &1.type)
+        assert types == ["user", "assistant"]
+      end)
+    end
+  end
+
+  describe "build_conversation_chain missing fields" do
+    test "handles entries with missing message and sessionId", %{tmp_dir: tmp_dir} do
+      with_config_dir(tmp_dir, fn ->
+        lines = [
+          Jason.encode!(%{"type" => "user", "uuid" => "u1"}),
+          Jason.encode!(%{"type" => "assistant", "uuid" => "a1", "session_id" => "alt-id", "message" => %{"content" => "Hi"}})
+        ]
+        {project_dir, _} = setup_session(tmp_dir, "missing-fields", lines)
+        messages = Sessions.get_session_messages("missing-fields", directory: project_dir)
+        assert length(messages) == 2
+        assert Enum.at(messages, 0).message == %{}
+        assert Enum.at(messages, 1).session_id == "alt-id"
+      end)
+    end
+  end
+
+  describe "first_prompt with no user messages" do
+    test "returns nil when no user/human messages exist", %{tmp_dir: tmp_dir} do
+      with_config_dir(tmp_dir, fn ->
+        lines = [
+          Jason.encode!(%{"type" => "system", "data" => "init"}),
+          Jason.encode!(%{"type" => "assistant", "message" => %{"content" => "Hello"}})
+        ]
+        {project_dir, _} = setup_session(tmp_dir, "no-prompt", lines)
+        info = Sessions.get_session_info("no-prompt", directory: project_dir)
+        assert info.first_prompt == nil
+      end)
+    end
+  end
+
+  describe "find_last_value when no matching type" do
+    test "returns nil for custom_title when no custom-title entries", %{tmp_dir: tmp_dir} do
+      with_config_dir(tmp_dir, fn ->
+        lines = [
+          Jason.encode!(%{"type" => "user", "message" => %{"content" => "Hello"}}),
+          Jason.encode!(%{"type" => "assistant", "message" => %{"content" => "Hi"}})
+        ]
+        {project_dir, _} = setup_session(tmp_dir, "no-title", lines)
+        info = Sessions.get_session_info("no-title", directory: project_dir)
+        assert info.custom_title == nil
+        assert info.summary == nil
+        assert info.tag == nil
+      end)
+    end
+  end
+
+  describe "read_tail_lines with empty file" do
+    test "empty file returns no metadata", %{tmp_dir: tmp_dir} do
+      with_config_dir(tmp_dir, fn ->
+        project_dir = Path.join(tmp_dir, "test-project")
+        projects_base = Path.join(tmp_dir, "projects")
+        sanitized = project_dir |> Path.expand() |> String.replace("/", "-")
+        session_dir = Path.join(projects_base, sanitized)
+        File.mkdir_p!(session_dir)
+        file_path = Path.join(session_dir, "empty-session.jsonl")
+        File.write!(file_path, "")
+        sessions = Sessions.list_sessions(directory: project_dir)
+        assert length(sessions) == 1
+        session = hd(sessions)
+        assert session.custom_title == nil
+        assert session.summary == nil
+        assert session.first_prompt == nil
+      end)
+    end
+  end
+
+  describe "tag_session sanitizes unicode" do
+    test "strips zero-width characters from tag", %{tmp_dir: tmp_dir} do
+      with_config_dir(tmp_dir, fn ->
+        line = Jason.encode!(%{"type" => "user", "message" => %{"content" => "Hi"}})
+        {project_dir, file_path} = setup_session(tmp_dir, "tag-unicode", [line])
+        :ok = Sessions.tag_session("tag-unicode", "v1\u200B.0", directory: project_dir)
+        content = File.read!(file_path)
+        lines = String.split(content, "\n", trim: true)
+        last_entry = Jason.decode!(List.last(lines))
+        assert last_entry["tag"] == "v1.0"
       end)
     end
   end

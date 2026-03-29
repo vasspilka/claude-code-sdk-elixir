@@ -310,9 +310,11 @@ defmodule ClaudeSDK.Client do
           try do
             close(client)
           rescue
-            _ -> :ok
+            e ->
+              Logger.debug("with_client close failed: #{Exception.message(e)}")
           catch
-            :exit, _ -> :ok
+            :exit, reason ->
+              Logger.debug("with_client close exited: #{inspect(reason)}")
           end
         end
 

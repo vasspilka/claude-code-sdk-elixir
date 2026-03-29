@@ -103,4 +103,26 @@ defmodule ClaudeSDK.Transport.LineBufferTest do
       assert messages == []
     end
   end
+
+  describe "accumulate/2" do
+    test "returns {:ok, buffer} for normal chunks" do
+      buf = LineBuffer.new()
+      assert {:ok, new_buf} = LineBuffer.accumulate(buf, "partial data")
+      assert new_buf.buffer == "partial data"
+    end
+
+    test "accumulates across multiple calls" do
+      buf = LineBuffer.new()
+      {:ok, buf2} = LineBuffer.accumulate(buf, "part1")
+      {:ok, buf3} = LineBuffer.accumulate(buf2, "part2")
+      assert buf3.buffer == "part1part2"
+    end
+
+    @tag :capture_log
+    test "returns error on buffer overflow" do
+      buf = LineBuffer.new()
+      large_chunk = String.duplicate("x", 10_485_761)
+      assert {:error, :buffer_overflow} = LineBuffer.accumulate(buf, large_chunk)
+    end
+  end
 end

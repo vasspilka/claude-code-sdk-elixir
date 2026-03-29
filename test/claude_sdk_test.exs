@@ -48,4 +48,34 @@ defmodule ClaudeSDKTest do
       assert result.usage["output_tokens"] == 5
     end
   end
+
+  describe "Internal.wait_for_init_response" do
+    test "returns error when control_response contains error" do
+      # Send an error control_response to self before calling wait
+      send(self(), {:claude_message, %{
+        "type" => "control_response",
+        "response" => %{"error" => "initialization failed"}
+      }})
+
+      assert {:error, {:init_failed, "initialization failed"}} =
+               ClaudeSDK.Internal.wait_for_init_response(1000)
+    end
+
+    test "returns ok with empty map when control_response has no response field" do
+      send(self(), {:claude_message, %{"type" => "control_response"}})
+
+      assert {:ok, %{}, []} = ClaudeSDK.Internal.wait_for_init_response(1000)
+    end
+
+    test "buffers non-control_response messages during init" do
+      send(self(), {:claude_message, %{"type" => "system", "data" => "init"}})
+      send(self(), {:claude_message, %{
+        "type" => "control_response",
+        "response" => %{"session_id" => "s1"}
+      }})
+
+      assert {:ok, %{"session_id" => "s1"}, [%{"type" => "system", "data" => "init"}]} =
+               ClaudeSDK.Internal.wait_for_init_response(1000)
+    end
+  end
 end

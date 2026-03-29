@@ -206,7 +206,15 @@ defmodule ClaudeSDK.Transport.Subprocess do
 
   def handle_info({port, {:data, {:noeol, chunk}}}, %{port: port} = state) do
     # Partial line — accumulate in buffer until the final :eol arrives
-    {:noreply, %{state | buffer: LineBuffer.accumulate(state.buffer, chunk)}}
+    case LineBuffer.accumulate(state.buffer, chunk) do
+      {:ok, new_buffer} ->
+        {:noreply, %{state | buffer: new_buffer}}
+
+      {:error, :buffer_overflow} ->
+        # Buffer exceeded 10MB — the in-progress message is lost.
+        # Reset buffer and continue; subsequent messages can still be processed.
+        {:noreply, %{state | buffer: LineBuffer.new()}}
+    end
   end
 
   def handle_info({port, {:exit_status, 0}}, %{port: port} = state) do
