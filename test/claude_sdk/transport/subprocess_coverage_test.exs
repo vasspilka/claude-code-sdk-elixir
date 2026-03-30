@@ -118,7 +118,7 @@ defmodule ClaudeSDK.Transport.SubprocessCoverageTest do
       assert_receive {:claude_message, %{"type" => "assistant"}}, 5000
       assert_receive {:claude_message, %{"type" => "result"}}, 5000
 
-      Subprocess.stop(pid)
+      if Process.alive?(pid), do: Subprocess.stop(pid)
     end
   end
 

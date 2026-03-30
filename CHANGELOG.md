@@ -7,12 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-03-30
+
 ### Added
 
 - `ClaudeSDK.Transport` behaviour — pluggable transport abstraction with `start_link/1`, `start/1`, `send_message/2`, and `stop/1` callbacks
 - `transport_module` option in `Options` (default: `ClaudeSDK.Transport.Subprocess`) — allows swapping the transport for testing or alternative communication channels
 - `Client.disconnect/1` — stops the CLI subprocess while keeping the Client GenServer alive for later reconnection via `connect/1`
 - `Client.query/3` now accepts `parent_tool_use_id` and `tool_use_result` keyword options for nested tool interaction flows, matching the Python SDK's `ClaudeSDKClient.query()`
+- `ProcessExitError` exception — wraps non-zero CLI exit codes with `message` and `exit_code` fields, replacing raw exit code tuples
+- `{:deny, reason, :interrupt}` permission callback return value — denies a tool AND interrupts the active conversation
+- `{:allow, updated_permissions: [String.t()]}` permission callback option — allows granting additional permissions alongside input modifications
+- `permission_suggestions` field on `ToolPermissionContext` — populated from CLI request for richer permission UI decisions
+- MCP servers now respond to `initialize` JSONRPC requests with protocol version, capabilities, and server info
+- MCP tool argument validation — tool arguments are validated against the tool's input schema (required fields + top-level type checking) before the handler is called
 
 ### Changed
 
@@ -21,16 +29,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - All subprocess communication in `ClaudeSDK` and `Client` routes through the configured `transport_module` instead of hardcoded `Subprocess` calls
 - `Internal.safe_stop_subprocess/1` uses generic `GenServer.stop/2` instead of transport-specific `Subprocess.stop/1`
 - SDK version fallback uses compile-time module attribute instead of runtime `MixProject.project()` call
+- Permission callbacks now execute with a timeout (uses `hook_timeout_ms`, default 30s) — hanging callbacks are killed and return `{:deny, "Permission callback timed out"}`
+- `extra_args` now rejects `--permission-mode`, `--output-format`, `--input-format`, and `--permission-prompt-tool` to prevent bypassing SDK-managed flags
+- MCP response key changed from `jsonrpc_response` to `mcp_response`/`message`, and incoming MCP messages read from `request["message"]` with fallback to `request["jsonrpc_message"]`
 
 ### Fixed
 
 - **Control response request_id correlation** — Client now matches `request_id` on incoming `control_response` messages against the pending request. Stale responses (e.g. from a timed-out request) are discarded instead of being attributed to a new request. Backwards-compatible with older CLI versions that omit `request_id`.
 - **Port.command failure handling** — `Subprocess` now checks the return value of `Port.command/2` and rescues `ArgumentError`. On failure, the caller is notified with `{:claude_exit, {:error, :port_closed}}` and the GenServer stops gracefully, instead of silently losing messages.
+- **Subprocess caller monitoring** — `Subprocess` now monitors its caller process and stops automatically if the caller dies, preventing orphaned CLI subprocesses
+- **Stale mailbox flushing** — `Client.query/3` now flushes stale `{:client_message, gen, _}` messages from the caller's mailbox after each query, preventing unbounded mailbox growth
 - `active_caller` now cleared on result message in streaming state (previously leaked stale reference)
 - Unicode sanitization added to `Sessions.rename_session/3` and `Sessions.tag_session/3` — NFKC normalization and dangerous Unicode stripping (format, private-use, unassigned codepoints), matching Python SDK's `_sanitize_unicode()`
 - Clarified `output_format` docs — `output_format: :json` and `json_schema` share the same underlying CLI flag and are mutually exclusive
 - Removed TOCTOU race in `Internal.safe_stop_subprocess/1` — `Process.alive?` check before `GenServer.stop` was redundant since the `catch :exit` already handles dead processes
 - `setting_sources` values now validated — must be `"user"`, `"project"`, or `"local"` (catches typos early, matching Python SDK validation)
+- `LineBuffer.accumulate/2` now returns `{:error, :buffer_overflow}` instead of silently resetting on overflow
 
 ### Improved
 
