@@ -148,6 +148,18 @@ defmodule ClaudeSDK do
   @spec tag_session(String.t(), String.t() | nil, keyword()) :: :ok | {:error, term()}
   defdelegate tag_session(session_id, tag, opts \\ []), to: ClaudeSDK.Sessions
 
+  @doc """
+  Delete a session. See `ClaudeSDK.Sessions.delete_session/2`.
+  """
+  @spec delete_session(String.t(), keyword()) :: :ok | {:error, term()}
+  defdelegate delete_session(session_id, opts \\ []), to: ClaudeSDK.Sessions
+
+  @doc """
+  Fork a session. See `ClaudeSDK.Sessions.fork_session/2`.
+  """
+  @spec fork_session(String.t(), keyword()) :: {:ok, String.t()} | {:error, term()}
+  defdelegate fork_session(session_id, opts \\ []), to: ClaudeSDK.Sessions
+
   @doc false
   defdelegate generate_request_id, to: ClaudeSDK.Internal
 

@@ -87,8 +87,9 @@ defmodule ClaudeSDK.Transport.Subprocess do
   end
 
   defp do_init(cli_path, caller, options) do
-    # Fire-and-forget version check — don't block subprocess startup
-    Task.start(fn -> check_cli_version(cli_path) end)
+    # Async version check — don't block subprocess startup, but notify caller
+    parent = self()
+    Task.start(fn -> check_cli_version(cli_path, parent) end)
 
     args = CommandBuilder.build_args(options)
     env = CommandBuilder.build_env(options)
@@ -137,16 +138,16 @@ defmodule ClaudeSDK.Transport.Subprocess do
 
   @minimum_cli_version "2.0.0"
 
-  defp check_cli_version(cli_path) do
+  defp check_cli_version(cli_path, subprocess_pid) do
     case CLIDiscovery.version(cli_path) do
-      {:ok, version_string} -> compare_version(version_string)
+      {:ok, version_string} -> compare_version(version_string, subprocess_pid)
       _ -> Logger.debug("Could not determine Claude CLI version")
     end
   rescue
     _ -> Logger.debug("Could not determine Claude CLI version")
   end
 
-  defp compare_version(version_string) do
+  defp compare_version(version_string, subprocess_pid) do
     version =
       version_string
       |> String.trim_leading("v")
@@ -155,10 +156,12 @@ defmodule ClaudeSDK.Transport.Subprocess do
       |> Enum.join(".")
 
     if Version.compare(version, @minimum_cli_version) == :lt do
-      Logger.warning(
+      warning =
         "Claude CLI version #{version_string} is below minimum #{@minimum_cli_version}. " <>
           "Some features may not work. Run `npm install -g @anthropic-ai/claude-code` to update."
-      )
+
+      Logger.warning(warning)
+      send(subprocess_pid, {:cli_version_warning, warning})
     end
   rescue
     _ -> Logger.debug("Could not parse Claude CLI version: #{version_string}")
@@ -231,6 +234,11 @@ defmodule ClaudeSDK.Transport.Subprocess do
   def handle_info({:DOWN, ref, :process, _pid, _reason}, %{caller_monitor: ref} = state) do
     # Caller process died — stop to prevent orphaned subprocess
     {:stop, :normal, state}
+  end
+
+  def handle_info({:cli_version_warning, warning}, state) do
+    send(state.caller, {:claude_version_warning, warning})
+    {:noreply, state}
   end
 
   def handle_info(msg, state) do

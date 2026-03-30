@@ -322,8 +322,8 @@ defmodule ClaudeSDK.Transport.CommandBuilderTest do
     test "includes CLI entrypoint" do
       env = CommandBuilder.build_env(%Options{})
 
-      assert {"CLAUDE_CODE_ENTRYPOINT", "cli-elixir"} in env
-      refute Enum.any?(env, fn {k, _} -> k == "CLAUDE_AGENT_SDK_VERSION" end)
+      assert {"CLAUDE_CODE_ENTRYPOINT", "sdk-elixir"} in env
+      assert Enum.any?(env, fn {k, _} -> k == "CLAUDE_AGENT_SDK_VERSION" end)
     end
 
     test "includes user-provided env vars" do

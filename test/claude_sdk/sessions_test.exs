@@ -571,6 +571,137 @@ defmodule ClaudeSDK.SessionsTest do
     end
   end
 
+  describe "delete_session/2" do
+    test "deletes an existing session file", %{tmp_dir: tmp_dir} do
+      line = Jason.encode!(%{"type" => "user", "message" => %{"content" => "Hi"}})
+      {project_dir, file_path} = setup_session(tmp_dir, "delete-me", [line])
+
+      with_config_dir(tmp_dir, fn ->
+        assert File.exists?(file_path)
+        assert :ok = Sessions.delete_session("delete-me", directory: project_dir)
+        refute File.exists?(file_path)
+      end)
+    end
+
+    test "returns error for non-existent session", %{tmp_dir: tmp_dir} do
+      with_config_dir(tmp_dir, fn ->
+        assert {:error, :session_not_found} =
+                 Sessions.delete_session("nonexistent", directory: "/some/path")
+      end)
+    end
+
+    test "returns error for invalid session id", %{tmp_dir: tmp_dir} do
+      with_config_dir(tmp_dir, fn ->
+        assert {:error, :invalid_session_id} =
+                 Sessions.delete_session("../etc/passwd", directory: "/tmp")
+      end)
+    end
+
+    test "session no longer appears in list after deletion", %{tmp_dir: tmp_dir} do
+      line = Jason.encode!(%{"type" => "user", "message" => %{"content" => "Hi"}})
+      {project_dir, _} = setup_session(tmp_dir, "to-delete", [line])
+
+      with_config_dir(tmp_dir, fn ->
+        assert length(Sessions.list_sessions(directory: project_dir)) == 1
+        :ok = Sessions.delete_session("to-delete", directory: project_dir)
+        assert Sessions.list_sessions(directory: project_dir) == []
+      end)
+    end
+  end
+
+  describe "fork_session/2" do
+    test "creates a copy of the session with a new ID", %{tmp_dir: tmp_dir} do
+      lines = [
+        Jason.encode!(%{"type" => "user", "uuid" => "u1", "message" => %{"content" => "Hello"}}),
+        Jason.encode!(%{
+          "type" => "assistant",
+          "uuid" => "a1",
+          "message" => %{"content" => "Hi there"}
+        })
+      ]
+
+      {project_dir, _} = setup_session(tmp_dir, "source-session", lines)
+
+      with_config_dir(tmp_dir, fn ->
+        assert {:ok, new_id} = Sessions.fork_session("source-session", directory: project_dir)
+        assert is_binary(new_id)
+        assert new_id != "source-session"
+
+        # Both sessions should exist
+        sessions = Sessions.list_sessions(directory: project_dir)
+        ids = Enum.map(sessions, & &1.session_id)
+        assert "source-session" in ids
+        assert new_id in ids
+
+        # Forked session should have same messages
+        messages = Sessions.get_session_messages(new_id, directory: project_dir)
+        assert length(messages) == 2
+        assert Enum.at(messages, 0).type == "user"
+        assert Enum.at(messages, 1).type == "assistant"
+      end)
+    end
+
+    test "forks up to a specific message UUID", %{tmp_dir: tmp_dir} do
+      lines = [
+        Jason.encode!(%{"type" => "user", "uuid" => "u1", "message" => %{"content" => "First"}}),
+        Jason.encode!(%{
+          "type" => "assistant",
+          "uuid" => "a1",
+          "message" => %{"content" => "Reply 1"}
+        }),
+        Jason.encode!(%{"type" => "user", "uuid" => "u2", "message" => %{"content" => "Second"}}),
+        Jason.encode!(%{
+          "type" => "assistant",
+          "uuid" => "a2",
+          "message" => %{"content" => "Reply 2"}
+        })
+      ]
+
+      {project_dir, _} = setup_session(tmp_dir, "fork-partial", lines)
+
+      with_config_dir(tmp_dir, fn ->
+        assert {:ok, new_id} =
+                 Sessions.fork_session("fork-partial",
+                   directory: project_dir,
+                   up_to_message_uuid: "a1"
+                 )
+
+        messages = Sessions.get_session_messages(new_id, directory: project_dir)
+        assert length(messages) == 2
+        assert Enum.at(messages, 0).uuid == "u1"
+        assert Enum.at(messages, 1).uuid == "a1"
+      end)
+    end
+
+    test "returns error for non-existent session", %{tmp_dir: tmp_dir} do
+      with_config_dir(tmp_dir, fn ->
+        assert {:error, :session_not_found} =
+                 Sessions.fork_session("nonexistent", directory: "/some/path")
+      end)
+    end
+
+    test "returns error for invalid session id", %{tmp_dir: tmp_dir} do
+      with_config_dir(tmp_dir, fn ->
+        assert {:error, :invalid_session_id} =
+                 Sessions.fork_session("../evil", directory: "/tmp")
+      end)
+    end
+  end
+
+  describe "delegate functions for new session operations" do
+    test "delete_session delegates to Sessions", %{tmp_dir: tmp_dir} do
+      with_config_dir(tmp_dir, fn ->
+        assert {:error, _} = ClaudeSDK.delete_session("nonexistent", directory: "/nonexistent")
+      end)
+    end
+
+    test "fork_session delegates to Sessions", %{tmp_dir: tmp_dir} do
+      with_config_dir(tmp_dir, fn ->
+        assert {:error, _} = ClaudeSDK.fork_session("nonexistent", directory: "/nonexistent")
+      end)
+    end
+  end
+
   describe "tag_session sanitizes unicode" do
     test "strips zero-width characters from tag", %{tmp_dir: tmp_dir} do
       with_config_dir(tmp_dir, fn ->

@@ -174,6 +174,68 @@ defmodule ClaudeSDK.Sessions do
     end
   end
 
+  @doc """
+  Delete a session by removing its JSONL file.
+
+  Returns `:ok` if the file was deleted, or `{:error, reason}` if the session
+  was not found or could not be deleted.
+
+  ## Options
+
+  - `directory` — project directory to search in (default: current directory)
+  """
+  @spec delete_session(String.t(), keyword()) :: :ok | {:error, term()}
+  def delete_session(session_id, opts \\ []) do
+    with :ok <- validate_session_id(session_id) do
+      directory = Keyword.get(opts, :directory, File.cwd!())
+
+      case find_session_file(session_id, directory) do
+        nil -> {:error, :session_not_found}
+        path -> File.rm(path)
+      end
+    end
+  end
+
+  @doc """
+  Fork a session by copying its transcript to a new session ID.
+
+  Creates a new session file containing all messages from the source session
+  up to (and including) `up_to_message_uuid`, if provided. When `up_to_message_uuid`
+  is `nil`, the entire transcript is copied.
+
+  Returns `{:ok, new_session_id}` on success.
+
+  ## Options
+
+  - `directory` — project directory to search in (default: current directory)
+  - `up_to_message_uuid` — optional UUID; only copy messages up to this point
+  """
+  @spec fork_session(String.t(), keyword()) :: {:ok, String.t()} | {:error, term()}
+  def fork_session(session_id, opts \\ []) do
+    with :ok <- validate_session_id(session_id) do
+      directory = Keyword.get(opts, :directory, File.cwd!())
+      up_to = Keyword.get(opts, :up_to_message_uuid)
+
+      case find_session_file(session_id, directory) do
+        nil ->
+          {:error, :session_not_found}
+
+        source_path ->
+          new_id = generate_session_id()
+          dir = Path.dirname(source_path)
+          dest_path = Path.join(dir, "#{new_id}.jsonl")
+
+          lines = read_lines_for_fork(source_path, up_to)
+          content = Enum.join(lines, "\n") <> "\n"
+
+          case File.write(dest_path, content) do
+            :ok -> {:ok, new_id}
+            {:error, reason} -> {:error, reason}
+          end
+      end
+    end
+  end
+
   # Private
 
   # Validate session_id to prevent path traversal attacks.
@@ -420,6 +482,42 @@ defmodule ClaudeSDK.Sessions do
   # This removes zero-width spaces, directional marks, BOM, and other invisible chars.
   defp strip_dangerous_unicode(text) do
     Regex.replace(~r/[\p{Cf}\p{Co}\p{Cn}]/u, text, "")
+  end
+
+  defp generate_session_id do
+    hex = :crypto.strong_rand_bytes(16) |> Base.encode16(case: :lower)
+    # Format as UUID-like: 8-4-4-4-12
+    <<a::binary-size(8), b::binary-size(4), c::binary-size(4), d::binary-size(4),
+      e::binary-size(12)>> = hex
+
+    "#{a}-#{b}-#{c}-#{d}-#{e}"
+  end
+
+  defp read_lines_for_fork(source_path, nil) do
+    source_path
+    |> File.stream!()
+    |> Enum.map(&String.trim_trailing(&1, "\n"))
+    |> Enum.reject(&(&1 == ""))
+  end
+
+  defp read_lines_for_fork(source_path, up_to_uuid) do
+    source_path
+    |> File.stream!()
+    |> Enum.reduce_while([], fn line, acc ->
+      trimmed = String.trim_trailing(line, "\n")
+
+      if trimmed == "" do
+        {:cont, acc}
+      else
+        acc = [trimmed | acc]
+
+        case Jason.decode(trimmed) do
+          {:ok, %{"uuid" => ^up_to_uuid}} -> {:halt, acc}
+          _ -> {:cont, acc}
+        end
+      end
+    end)
+    |> Enum.reverse()
   end
 
   defp append_to_session(session_id, entry, directory) do
