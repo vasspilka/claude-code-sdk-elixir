@@ -251,6 +251,72 @@ defmodule ClaudeSDK.SessionsTest do
     end
   end
 
+  describe "get_session_transcript/2" do
+    test "returns all entries including non-conversation types", %{tmp_dir: tmp_dir} do
+      lines = [
+        Jason.encode!(%{"type" => "system", "subtype" => "init", "session_id" => "s1"}),
+        Jason.encode!(%{"type" => "user", "uuid" => "u1", "message" => %{"content" => "Hello"}}),
+        Jason.encode!(%{
+          "type" => "assistant",
+          "uuid" => "a1",
+          "message" => %{"content" => [%{"type" => "tool_use", "name" => "Read", "id" => "t1"}]}
+        }),
+        Jason.encode!(%{"type" => "tool_result", "tool_use_id" => "t1", "content" => "file data"}),
+        Jason.encode!(%{
+          "type" => "control_request",
+          "request_id" => "r1",
+          "request" => %{"subtype" => "can_use_tool"}
+        }),
+        Jason.encode!(%{"type" => "result", "subtype" => "success", "result" => "done"})
+      ]
+
+      {project_dir, _} = setup_session(tmp_dir, "transcript-session", lines)
+
+      with_config_dir(tmp_dir, fn ->
+        entries = Sessions.get_session_transcript("transcript-session", directory: project_dir)
+        assert length(entries) == 6
+        types = Enum.map(entries, & &1["type"])
+        assert types == ["system", "user", "assistant", "tool_result", "control_request", "result"]
+      end)
+    end
+
+    test "returns empty list for non-existent session", %{tmp_dir: tmp_dir} do
+      with_config_dir(tmp_dir, fn ->
+        assert Sessions.get_session_transcript("nonexistent", directory: "/some/path") == []
+      end)
+    end
+
+    test "returns empty list for invalid session id", %{tmp_dir: tmp_dir} do
+      with_config_dir(tmp_dir, fn ->
+        assert Sessions.get_session_transcript("../etc/passwd", directory: "/tmp") == []
+      end)
+    end
+
+    test "supports limit and offset", %{tmp_dir: tmp_dir} do
+      lines = [
+        Jason.encode!(%{"type" => "system", "subtype" => "init"}),
+        Jason.encode!(%{"type" => "user", "uuid" => "u1", "message" => %{"content" => "Hi"}}),
+        Jason.encode!(%{"type" => "assistant", "uuid" => "a1", "message" => %{"content" => "Hey"}}),
+        Jason.encode!(%{"type" => "result", "subtype" => "success"})
+      ]
+
+      {project_dir, _} = setup_session(tmp_dir, "transcript-paginated", lines)
+
+      with_config_dir(tmp_dir, fn ->
+        entries =
+          Sessions.get_session_transcript("transcript-paginated",
+            directory: project_dir,
+            limit: 2,
+            offset: 1
+          )
+
+        assert length(entries) == 2
+        assert Enum.at(entries, 0)["type"] == "user"
+        assert Enum.at(entries, 1)["type"] == "assistant"
+      end)
+    end
+  end
+
   describe "rename_session/3" do
     test "appends custom-title entry to session file", %{tmp_dir: tmp_dir} do
       line = Jason.encode!(%{"type" => "user", "message" => %{"content" => "Hi"}})

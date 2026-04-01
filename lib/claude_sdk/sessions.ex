@@ -133,6 +133,45 @@ defmodule ClaudeSDK.Sessions do
   end
 
   @doc """
+  Get the full unfiltered transcript for a session.
+
+  Unlike `get_session_messages/2` which only returns user/assistant messages,
+  this returns every JSONL entry — including tool results, control requests,
+  system messages, metadata entries, and more. Useful for introspecting
+  sub-agent sessions to see exactly what tools were called and what happened.
+
+  Each entry is a raw decoded JSON map with its original keys preserved.
+
+  ## Options
+
+  - `directory` — project directory to search in (default: current directory)
+  - `limit` — max number of entries to return
+  - `offset` — number of entries to skip (default: 0)
+  """
+  @spec get_session_transcript(String.t(), keyword()) :: [map()]
+  def get_session_transcript(session_id, opts \\ []) do
+    with :ok <- validate_session_id(session_id) do
+      directory = Keyword.get(opts, :directory, File.cwd!())
+      limit = Keyword.get(opts, :limit)
+      offset = Keyword.get(opts, :offset, 0)
+
+      case find_session_file(session_id, directory) do
+        nil ->
+          []
+
+        path ->
+          entries = read_jsonl(path)
+
+          entries
+          |> Enum.drop(offset)
+          |> then(fn e -> if limit, do: Enum.take(e, limit), else: e end)
+      end
+    else
+      {:error, :invalid_session_id} -> []
+    end
+  end
+
+  @doc """
   Rename a session by setting a custom title.
 
   Appends a `custom-title` entry to the session's JSONL file.

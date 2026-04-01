@@ -137,6 +137,12 @@ defmodule ClaudeSDK do
   defdelegate get_session_messages(session_id, opts \\ []), to: ClaudeSDK.Sessions
 
   @doc """
+  Get the full unfiltered transcript for a session. See `ClaudeSDK.Sessions.get_session_transcript/2`.
+  """
+  @spec get_session_transcript(String.t(), keyword()) :: [map()]
+  defdelegate get_session_transcript(session_id, opts \\ []), to: ClaudeSDK.Sessions
+
+  @doc """
   Rename a session. See `ClaudeSDK.Sessions.rename_session/3`.
   """
   @spec rename_session(String.t(), String.t(), keyword()) :: :ok | {:error, term()}

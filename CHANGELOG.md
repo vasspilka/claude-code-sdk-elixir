@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `ClaudeSDK.Sessions.get_session_transcript/2` — get the full unfiltered JSONL transcript for a session, including tool results, control requests, and system messages (useful for sub-agent introspection)
+- `ClaudeSDK.get_session_transcript/2` top-level delegate
+- `ClaudeSDK.Sessions.delete_session/2` — delete a session by removing its JSONL file
+- `ClaudeSDK.Sessions.fork_session/2` — fork a session by copying its transcript to a new session ID, with optional `up_to_message_uuid` truncation
+- `ClaudeSDK.delete_session/2` and `ClaudeSDK.fork_session/2` top-level delegates
+- CLI version warning forwarded to caller process as `{:claude_version_warning, warning}` message (previously fire-and-forget log only)
+- Example scripts under `examples/` — quick_start, multi_turn, mcp_calculator, permission_callback, session_management, structured_output
+
+### Fixed
+
+- `CLAUDE_CODE_ENTRYPOINT` env var corrected from `cli-elixir` to `sdk-elixir`
+- `CLAUDE_AGENT_SDK_VERSION` env var now included in subprocess environment
+
 ## [0.3.0] - 2026-03-30
 
 ### Added
