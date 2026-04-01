@@ -273,6 +273,10 @@ defmodule ClaudeSDK do
             end
         end
 
+      {:claude_message, %{"type" => "control_cancel_request"}} ->
+        # CLI cancelling an inflight handler; already completed synchronously — skip
+        {[], state}
+
       {:claude_message, raw} ->
         case MessageParser.parse(raw) do
           {:ok, %ClaudeSDK.Types.ResultMessage{} = msg} ->

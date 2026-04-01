@@ -72,6 +72,26 @@ defmodule ClaudeSDK.ClientTest do
       Client.close(client)
     end
 
+    test "connect! raises on failure" do
+      opts = %Options{cli_path: "/nonexistent/path/to/cli"}
+      {:ok, client} = Client.start_link(options: opts)
+
+      assert_raise ClaudeSDK.TransportError, fn ->
+        Client.connect!(client)
+      end
+
+      Client.close(client)
+    end
+
+    test "connect! returns :ok on success" do
+      opts = %Options{cli_path: @mock_cli_path}
+      {:ok, client} = Client.start_link(options: opts)
+
+      assert :ok = Client.connect!(client)
+
+      Client.close(client)
+    end
+
     test "query before connect returns error" do
       opts = %Options{cli_path: @mock_cli_path}
       {:ok, client} = Client.start_link(options: opts)
@@ -175,6 +195,15 @@ defmodule ClaudeSDK.ClientTest do
       {:ok, client} = Client.start_link(options: opts)
 
       assert {:error, :not_connected} = Client.get_mcp_status(client)
+
+      Client.close(client)
+    end
+
+    test "get_context_usage returns error when not connected" do
+      opts = %Options{cli_path: @mock_cli_path}
+      {:ok, client} = Client.start_link(options: opts)
+
+      assert {:error, :not_connected} = Client.get_context_usage(client)
 
       Client.close(client)
     end

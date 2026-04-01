@@ -74,6 +74,12 @@ defmodule ClaudeSDK.Transport.CommandBuilderTest do
         "--permission-mode",
         "plan"
       )
+
+      assert_flag(
+        CommandBuilder.build_args(%Options{permission_mode: :dont_ask}),
+        "--permission-mode",
+        "dontAsk"
+      )
     end
 
     test "adds --continue flag when true" do

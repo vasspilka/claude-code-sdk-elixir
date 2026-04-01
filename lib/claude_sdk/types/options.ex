@@ -51,7 +51,7 @@ defmodule ClaudeSDK.Types.Options do
 
   ### Permissions
 
-  - `permission_mode` — One of `:default`, `:accept_edits`, `:plan`, or `:bypass_permissions`.
+  - `permission_mode` — One of `:default`, `:accept_edits`, `:plan`, `:bypass_permissions`, or `:dont_ask`.
 
   ### Session Management
 
@@ -146,7 +146,7 @@ defmodule ClaudeSDK.Types.Options do
 
   """
 
-  @type permission_mode :: :default | :accept_edits | :plan | :bypass_permissions
+  @type permission_mode :: :default | :accept_edits | :plan | :bypass_permissions | :dont_ask
 
   @type can_use_tool_callback ::
           (tool_name :: String.t(), input :: map() ->
@@ -309,7 +309,7 @@ defmodule ClaudeSDK.Types.Options do
             extra_args: [],
             transport_module: ClaudeSDK.Transport.Subprocess
 
-  @valid_permission_modes [nil, :default, :accept_edits, :plan, :bypass_permissions]
+  @valid_permission_modes [nil, :default, :accept_edits, :plan, :bypass_permissions, :dont_ask]
   @valid_efforts [nil, "low", "medium", "high", "max"]
   @valid_setting_sources ["user", "project", "local"]
 

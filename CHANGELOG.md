@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `Client.get_context_usage/1` — get context window usage breakdown (token counts by category) via control request
+- `Client.connect!/1` — bang variant that raises `TransportError` on failure instead of returning `{:error, reason}`
+- `:dont_ask` permission mode — maps to CLI's `dontAsk` mode, completing parity with the Python SDK's 5 permission modes
 - `ClaudeSDK.Sessions.get_session_transcript/2` — get the full unfiltered JSONL transcript for a session, including tool results, control requests, and system messages (useful for sub-agent introspection)
 - `ClaudeSDK.get_session_transcript/2` top-level delegate
 - `ClaudeSDK.Sessions.delete_session/2` — delete a session by removing its JSONL file
@@ -19,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `control_cancel_request` messages from CLI no longer fall through as unhandled — now acknowledged and discarded in both `Client` and stateless `query/2` (handlers already use spawn_monitor with timeouts, so cancellation is a no-op)
 - `CLAUDE_CODE_ENTRYPOINT` env var corrected from `cli-elixir` to `sdk-elixir`
 - `CLAUDE_AGENT_SDK_VERSION` env var now included in subprocess environment
 

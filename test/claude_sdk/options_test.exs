@@ -50,7 +50,7 @@ defmodule ClaudeSDK.OptionsTest do
     end
 
     test "accepts all valid permission modes" do
-      for mode <- [nil, :default, :accept_edits, :plan, :bypass_permissions] do
+      for mode <- [nil, :default, :accept_edits, :plan, :bypass_permissions, :dont_ask] do
         assert :ok = Options.validate(%Options{permission_mode: mode})
       end
     end

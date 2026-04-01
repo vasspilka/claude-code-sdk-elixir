@@ -19,7 +19,8 @@ defmodule ClaudeSDK.Transport.CommandBuilder do
     default: "default",
     accept_edits: "acceptEdits",
     plan: "plan",
-    bypass_permissions: "bypassPermissions"
+    bypass_permissions: "bypassPermissions",
+    dont_ask: "dontAsk"
   }
 
   @doc """

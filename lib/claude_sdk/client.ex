@@ -100,11 +100,23 @@ defmodule ClaudeSDK.Client do
   @doc """
   Connect to the CLI subprocess and perform initialization handshake.
 
-  Must be called before `query/2`.
+  Must be called before `query/2`. Returns `:ok` on success or
+  `{:error, reason}` on failure.
   """
   @spec connect(GenServer.server()) :: :ok | {:error, term()}
   def connect(client) do
     GenServer.call(client, :connect, @default_init_timeout + 5_000)
+  end
+
+  @doc """
+  Like `connect/1`, but raises on failure.
+  """
+  @spec connect!(GenServer.server()) :: :ok
+  def connect!(client) do
+    case connect(client) do
+      :ok -> :ok
+      {:error, reason} -> raise ClaudeSDK.TransportError, reason: reason
+    end
   end
 
   @doc """
@@ -184,6 +196,17 @@ defmodule ClaudeSDK.Client do
   @spec get_mcp_status(GenServer.server()) :: {:ok, map()} | {:error, term()}
   def get_mcp_status(client) do
     GenServer.call(client, :get_mcp_status, @default_init_timeout)
+  end
+
+  @doc """
+  Get context window usage breakdown.
+
+  Returns a map with token counts by category (e.g. system prompt, conversation,
+  tools, MCP, memory, agents). Can only be called when connected.
+  """
+  @spec get_context_usage(GenServer.server()) :: {:ok, map()} | {:error, term()}
+  def get_context_usage(client) do
+    GenServer.call(client, :get_context_usage, @default_init_timeout)
   end
 
   @doc """
@@ -516,6 +539,12 @@ defmodule ClaudeSDK.Client do
   def handle_call(:get_mcp_status, _from, %{state: s} = state),
     do: {:reply, {:error, state_error(s)}, state}
 
+  def handle_call(:get_context_usage, from, %{state: :connected} = state),
+    do: send_control_and_await(%{subtype: "get_context_usage"}, from, state)
+
+  def handle_call(:get_context_usage, _from, %{state: s} = state),
+    do: {:reply, {:error, state_error(s)}, state}
+
   def handle_call(:get_server_info, _from, %{state: :disconnected} = state),
     do: {:reply, {:error, :not_connected}, state}
 
@@ -581,6 +610,18 @@ defmodule ClaudeSDK.Client do
         maybe_forward_to_caller(raw, state)
         {:noreply, state}
     end
+  end
+
+  # CLI sends control_cancel_request to cancel an inflight handler. Since our
+  # handlers run synchronously with timeouts (spawn_monitor + Process.exit/kill),
+  # by the time this message arrives the handler has already completed or timed out.
+  # Acknowledge and discard.
+  def handle_info({:claude_message, %{"type" => "control_cancel_request"} = raw}, state) do
+    Logger.debug(
+      "Received control_cancel_request for request_id=#{raw["request_id"]} (already completed)"
+    )
+
+    {:noreply, state}
   end
 
   def handle_info(
