@@ -20,6 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CLI version warning forwarded to caller process as `{:claude_version_warning, warning}` message (previously fire-and-forget log only)
 - Example scripts under `examples/` — quick_start, multi_turn, mcp_calculator, permission_callback, session_management, structured_output
 
+### Improved
+
+- Line buffer overflow now notifies the caller — `Subprocess` sends `{:claude_buffer_overflow, bytes}` and both `query/2` and `Client` log a `:warning`. Previously the 10MB overflow silently discarded data with no indication to the consumer.
+- CLI version check failures ("could not determine version") now log at `:warning` instead of `:debug`, making installation/path issues visible by default
+
 ### Fixed
 
 - `control_cancel_request` messages from CLI no longer fall through as unhandled — now acknowledged and discarded in both `Client` and stateless `query/2` (handlers already use spawn_monitor with timeouts, so cancellation is a no-op)

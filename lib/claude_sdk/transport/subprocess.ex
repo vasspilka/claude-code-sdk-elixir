@@ -141,10 +141,10 @@ defmodule ClaudeSDK.Transport.Subprocess do
   defp check_cli_version(cli_path, subprocess_pid) do
     case CLIDiscovery.version(cli_path) do
       {:ok, version_string} -> compare_version(version_string, subprocess_pid)
-      _ -> Logger.debug("Could not determine Claude CLI version")
+      _ -> Logger.warning("Could not determine Claude CLI version")
     end
   rescue
-    _ -> Logger.debug("Could not determine Claude CLI version")
+    _ -> Logger.warning("Could not determine Claude CLI version")
   end
 
   defp compare_version(version_string, subprocess_pid) do
@@ -215,7 +215,9 @@ defmodule ClaudeSDK.Transport.Subprocess do
 
       {:error, :buffer_overflow} ->
         # Buffer exceeded 10MB — the in-progress message is lost.
-        # Reset buffer and continue; subsequent messages can still be processed.
+        # Notify the caller so the overflow is visible in the message stream,
+        # then reset buffer and continue; subsequent messages can still be processed.
+        send(state.caller, {:claude_buffer_overflow, byte_size(state.buffer.buffer <> chunk)})
         {:noreply, %{state | buffer: LineBuffer.new()}}
     end
   end

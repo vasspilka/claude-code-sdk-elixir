@@ -711,6 +711,11 @@ defmodule ClaudeSDK.Client do
     {:noreply, state}
   end
 
+  def handle_info({:claude_buffer_overflow, bytes}, state) do
+    Logger.warning("LineBuffer overflow: #{bytes} bytes lost — a large message was dropped")
+    {:noreply, state}
+  end
+
   def handle_info(
         {:DOWN, ref, :process, _pid, _reason},
         %{caller_monitor: ref, state: :streaming} = state

@@ -290,6 +290,10 @@ defmodule ClaudeSDK do
             {[], state}
         end
 
+      {:claude_buffer_overflow, bytes} ->
+        Logger.warning("LineBuffer overflow: #{bytes} bytes lost — a large message was dropped")
+        {[], state}
+
       {:claude_exit, _reason} ->
         {:halt, :done}
     after
