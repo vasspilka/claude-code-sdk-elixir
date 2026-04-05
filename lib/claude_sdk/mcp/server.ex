@@ -84,9 +84,10 @@ defmodule ClaudeSDK.MCP.Server do
         key = {server.name, tool.name}
 
         if Map.has_key?(inner_acc, key) do
-          Logger.warning(
+          Logger.error(
             "MCP tool name collision: tool #{inspect(tool.name)} on server " <>
-              "#{inspect(server.name)} is already registered — overwriting previous definition"
+              "#{inspect(server.name)} is already registered — overwriting previous definition. " <>
+              "The previous tool handler will be shadowed."
           )
         end
 

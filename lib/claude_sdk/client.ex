@@ -427,6 +427,7 @@ defmodule ClaudeSDK.Client do
         else: user_message
 
     send_to_cli(state, user_message)
+    ClaudeSDK.Telemetry.query_start()
 
     new_gen = state.query_gen + 1
     message_timeout = state.options.message_timeout_ms
@@ -681,6 +682,9 @@ defmodule ClaudeSDK.Client do
   end
 
   def handle_info({:claude_message, %{"type" => "result"} = raw}, %{state: :streaming} = state) do
+    duration_ms = raw["duration_ms"]
+    if duration_ms, do: ClaudeSDK.Telemetry.query_stop(duration_ms * 1_000_000)
+
     session_id = raw["session_id"] || state.session_id
     demonitor_caller(state)
 
@@ -711,6 +715,15 @@ defmodule ClaudeSDK.Client do
     {:noreply, state}
   end
 
+  def handle_info({:claude_stderr, line}, state) do
+    case state.options.on_stderr do
+      callback when is_function(callback) -> callback.(line)
+      _ -> Logger.debug("CLI stderr: #{String.slice(line, 0, 200)}")
+    end
+
+    {:noreply, state}
+  end
+
   def handle_info({:claude_buffer_overflow, bytes}, state) do
     Logger.warning("LineBuffer overflow: #{bytes} bytes lost — a large message was dropped")
     {:noreply, state}
@@ -721,8 +734,19 @@ defmodule ClaudeSDK.Client do
         %{caller_monitor: ref, state: :streaming} = state
       )
       when is_reference(ref) do
-    # Stream consumer died — recover to :connected so the Client isn't stuck
-    Logger.debug("Stream consumer process died, returning to :connected state")
+    # Stream consumer died — interrupt the CLI to stop wasted compute,
+    # then recover to :connected so the Client isn't stuck
+    Logger.debug(
+      "Stream consumer process died, sending interrupt and returning to :connected state"
+    )
+
+    interrupt_msg = %{
+      type: "control_request",
+      request_id: Internal.generate_request_id(),
+      request: %{subtype: "interrupt"}
+    }
+
+    send_to_cli(state, interrupt_msg)
     {:noreply, %{state | state: :connected, active_caller: nil, caller_monitor: nil}}
   end
 

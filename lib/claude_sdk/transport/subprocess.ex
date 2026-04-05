@@ -105,17 +105,20 @@ defmodule ClaudeSDK.Transport.Subprocess do
 
     cd = String.to_charlist(options.cwd || File.cwd!())
 
-    port_opts = [
-      :binary,
-      :exit_status,
-      {:line, 1_048_576},
-      {:args, args},
-      {:env, charlist_env},
-      {:cd, cd}
-    ]
+    port_opts =
+      [
+        :binary,
+        :exit_status,
+        {:line, 1_048_576},
+        {:args, args},
+        {:env, charlist_env},
+        {:cd, cd}
+      ]
+      |> maybe_add_stderr_redirect(options)
 
     try do
       port = Port.open({:spawn_executable, cli_path}, port_opts)
+      ClaudeSDK.Telemetry.subprocess_start(%{cli_path: cli_path})
 
       # Monitor the caller so we stop if it dies (prevents orphaned subprocesses)
       caller_monitor = Process.monitor(caller)
@@ -194,14 +197,19 @@ defmodule ClaudeSDK.Transport.Subprocess do
 
     case result do
       {:ok, parsed} ->
+        ClaudeSDK.Telemetry.message_received(%{type: parsed["type"] || "unknown"})
         send(state.caller, {:claude_message, parsed})
 
       {:error, _} ->
         full_line = if state.buffer.buffer == "", do: line, else: state.buffer.buffer <> line
 
-        Logger.debug(
-          "Skipping non-JSON line from CLI: #{inspect(String.slice(full_line, 0, 200))}"
-        )
+        if state.options.on_stderr do
+          send(state.caller, {:claude_stderr, full_line})
+        else
+          Logger.debug(
+            "Skipping non-JSON line from CLI: #{inspect(String.slice(full_line, 0, 200))}"
+          )
+        end
     end
 
     {:noreply, %{state | buffer: new_buffer}}
@@ -223,12 +231,14 @@ defmodule ClaudeSDK.Transport.Subprocess do
   end
 
   def handle_info({port, {:exit_status, 0}}, %{port: port} = state) do
+    ClaudeSDK.Telemetry.subprocess_stop(%{reason: :normal})
     send(state.caller, {:claude_exit, :normal})
     {:stop, :normal, state}
   end
 
   def handle_info({port, {:exit_status, code}}, %{port: port} = state) do
     error = ClaudeSDK.ProcessExitError.exception(exit_code: code)
+    ClaudeSDK.Telemetry.subprocess_stop(%{reason: {:error, code}})
     send(state.caller, {:claude_exit, {:error, error}})
     {:stop, {:cli_exit, code}, state}
   end
@@ -251,11 +261,33 @@ defmodule ClaudeSDK.Transport.Subprocess do
   @impl true
   def terminate(_reason, %{port: port}) do
     if Port.info(port) != nil do
+      # Send an interrupt so the CLI can clean up gracefully before we close stdin
+      try_send_interrupt(port)
       Port.close(port)
     end
 
     :ok
   rescue
     ArgumentError -> :ok
+  end
+
+  # When on_stderr is set, merge stderr into stdout so we can capture it.
+  # Non-JSON lines (which are stderr) will be forwarded to the caller.
+  defp maybe_add_stderr_redirect(port_opts, %{on_stderr: callback}) when is_function(callback),
+    do: [:stderr_to_stdout | port_opts]
+
+  defp maybe_add_stderr_redirect(port_opts, _options), do: port_opts
+
+  defp try_send_interrupt(port) do
+    json =
+      Jason.encode!(%{
+        type: "control_request",
+        request_id: "req_shutdown",
+        request: %{subtype: "interrupt"}
+      }) <> "\n"
+
+    Port.command(port, json)
+  rescue
+    _ -> :ok
   end
 end

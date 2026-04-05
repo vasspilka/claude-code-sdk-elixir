@@ -117,11 +117,18 @@ defmodule ClaudeSDK.Types.Options do
 
   - `user` — User identifier string. Maps to `--user`.
 
+  ### Stderr Capture
+
+  - `on_stderr` — Callback invoked for each line of stderr output from the CLI.
+    When set, the SDK enables `:stderr_to_stdout` on the Erlang port and routes
+    non-JSON lines (which are stderr) to this callback. When not set, stderr goes
+    to the VM's stderr (the terminal). Signature: `(String.t() -> any())`.
+
   ### Miscellaneous
 
   - `cli_path` — Override the CLI binary path (auto-discovered by default).
-  - `log_file` — Path to a file for CLI log output. Since Erlang ports only capture
-    stdout, this is the recommended way to capture CLI logs and stderr output.
+  - `log_file` — Path to a file for CLI log output. An alternative to `on_stderr`
+    for capturing CLI logs and stderr output.
   - `effort` — Effort level string.
   - `settings` — Map of CLI settings to override.
   - `setting_sources` — List of setting source paths.
@@ -256,6 +263,9 @@ defmodule ClaudeSDK.Types.Options do
           control_timeout_ms: pos_integer(),
           hook_timeout_ms: pos_integer(),
 
+          # Stderr callback
+          on_stderr: (String.t() -> any()) | nil,
+
           # Extra CLI args (escape hatch)
           extra_args: [String.t()],
 
@@ -306,6 +316,7 @@ defmodule ClaudeSDK.Types.Options do
             message_timeout_ms: 120_000,
             control_timeout_ms: 30_000,
             hook_timeout_ms: 30_000,
+            on_stderr: nil,
             extra_args: [],
             transport_module: ClaudeSDK.Transport.Subprocess
 

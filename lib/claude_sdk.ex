@@ -78,6 +78,22 @@ defmodule ClaudeSDK do
   ## Returns
 
   An `Enumerable.t()` of parsed message structs.
+
+  ## Stream Lifecycle
+
+  The returned stream is **lazy** — the CLI subprocess is not spawned until
+  the stream is consumed (e.g. via `Enum.each/2`, `Enum.to_list/1`, or
+  `Stream.run/1`). This means:
+
+  - **No side effects until consumption** — calling `query/2` alone does nothing.
+  - **Partial consumption** — if you stop consuming early (e.g. `Enum.take/2`),
+    the subprocess is cleaned up automatically via `Stream.resource/3`'s after
+    callback. However, the CLI may have already performed work (tool calls,
+    file edits) before the stream was halted.
+  - **Single consumption** — each stream can only be consumed once. Consuming
+    it again spawns a new subprocess and a new CLI session.
+  - **Cleanup** — the subprocess is always stopped when the stream finishes,
+    whether by natural completion, early halt, or error.
   """
   @spec query(String.t(), Options.t() | keyword()) :: Enumerable.t()
   def query(prompt, opts \\ %Options{})
@@ -209,6 +225,8 @@ defmodule ClaudeSDK do
         raise ClaudeSDK.TimeoutError, timeout_ms: init_timeout
     end
 
+    ClaudeSDK.Telemetry.query_start()
+
     # Send the user prompt
     user_message = %{
       type: "user",
@@ -226,6 +244,7 @@ defmodule ClaudeSDK do
       transport_module: transport_mod,
       control_handlers: control_handlers,
       message_timeout: message_timeout,
+      on_stderr: opts.on_stderr,
       started_at: System.monotonic_time(:millisecond)
     }
   end
@@ -289,6 +308,14 @@ defmodule ClaudeSDK do
             Logger.warning("Failed to parse message: #{inspect(reason)}")
             {[], state}
         end
+
+      {:claude_stderr, line} ->
+        case state[:on_stderr] do
+          callback when is_function(callback) -> callback.(line)
+          _ -> Logger.debug("CLI stderr: #{String.slice(line, 0, 200)}")
+        end
+
+        {[], state}
 
       {:claude_buffer_overflow, bytes} ->
         Logger.warning("LineBuffer overflow: #{bytes} bytes lost — a large message was dropped")

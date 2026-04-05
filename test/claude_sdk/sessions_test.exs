@@ -261,7 +261,11 @@ defmodule ClaudeSDK.SessionsTest do
           "uuid" => "a1",
           "message" => %{"content" => [%{"type" => "tool_use", "name" => "Read", "id" => "t1"}]}
         }),
-        Jason.encode!(%{"type" => "tool_result", "tool_use_id" => "t1", "content" => "file data"}),
+        Jason.encode!(%{
+          "type" => "tool_result",
+          "tool_use_id" => "t1",
+          "content" => "file data"
+        }),
         Jason.encode!(%{
           "type" => "control_request",
           "request_id" => "r1",
@@ -276,7 +280,15 @@ defmodule ClaudeSDK.SessionsTest do
         entries = Sessions.get_session_transcript("transcript-session", directory: project_dir)
         assert length(entries) == 6
         types = Enum.map(entries, & &1["type"])
-        assert types == ["system", "user", "assistant", "tool_result", "control_request", "result"]
+
+        assert types == [
+                 "system",
+                 "user",
+                 "assistant",
+                 "tool_result",
+                 "control_request",
+                 "result"
+               ]
       end)
     end
 
@@ -296,7 +308,11 @@ defmodule ClaudeSDK.SessionsTest do
       lines = [
         Jason.encode!(%{"type" => "system", "subtype" => "init"}),
         Jason.encode!(%{"type" => "user", "uuid" => "u1", "message" => %{"content" => "Hi"}}),
-        Jason.encode!(%{"type" => "assistant", "uuid" => "a1", "message" => %{"content" => "Hey"}}),
+        Jason.encode!(%{
+          "type" => "assistant",
+          "uuid" => "a1",
+          "message" => %{"content" => "Hey"}
+        }),
         Jason.encode!(%{"type" => "result", "subtype" => "success"})
       ]
 
