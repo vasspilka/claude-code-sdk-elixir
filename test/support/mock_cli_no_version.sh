@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Silence broken-pipe errors when the parent closes stdout early during tests.
+exec 2>/dev/null
 
 # Mock CLI that fails on -v (non-zero exit)
 if [ "$1" = "-v" ]; then echo "error"; exit 1; fi

@@ -291,8 +291,8 @@ defmodule ClaudeSDK.AdditionalCoverageTest do
       }
 
       {:handled, response} = ControlRouter.dispatch(raw, handlers)
-      assert response.response.allowed == false
-      assert response.response.reason =~ "Handler error"
+      assert response.response.subtype == "error"
+      assert response.response.error =~ "Handler error"
     end
   end
 
@@ -340,7 +340,7 @@ defmodule ClaudeSDK.AdditionalCoverageTest do
       }
 
       {:handled, response} = ControlRouter.dispatch(raw, handlers)
-      assert response.response.allowed == false
+      assert response.response.response.behavior == "deny"
     end
   end
 
@@ -373,19 +373,19 @@ defmodule ClaudeSDK.AdditionalCoverageTest do
   describe "ControlRouter build_response" do
     test "builds allow response" do
       response = ControlRouter.build_response("r1", "test", {:allow, %{updated: true}})
-      assert response.response.allowed == true
-      assert response.response.updated == true
+      assert response.response.response.behavior == "allow"
+      assert response.response.response.updated == true
     end
 
     test "builds deny response" do
       response = ControlRouter.build_response("r1", "test", {:deny, "not allowed"})
-      assert response.response.allowed == false
-      assert response.response.reason == "not allowed"
+      assert response.response.response.behavior == "deny"
+      assert response.response.response.message == "not allowed"
     end
 
     test "builds result response" do
       response = ControlRouter.build_response("r1", "test", {:result, %{data: "ok"}})
-      assert response.response.data == "ok"
+      assert response.response.response.data == "ok"
     end
   end
 

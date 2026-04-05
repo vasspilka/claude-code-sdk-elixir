@@ -178,14 +178,16 @@ defmodule ClaudeSDK.Transport.Subprocess do
       {:noreply, state}
     else
       Logger.warning("Port.command returned false — port is closed")
-      send(state.caller, {:claude_exit, {:error, :port_closed}})
-      {:stop, :normal, state}
+      # Don't emit :claude_exit here; the port's {:exit_status, _} message
+      # will follow (or has been queued) and will carry the real exit code.
+      {:noreply, state}
     end
   rescue
     ArgumentError ->
       Logger.warning("Port.command raised — port is closed")
-      send(state.caller, {:claude_exit, {:error, :port_closed}})
-      {:stop, :normal, state}
+      # Don't emit :claude_exit here; the port's {:exit_status, _} message
+      # will follow (or has been queued) and will carry the real exit code.
+      {:noreply, state}
   end
 
   @impl true

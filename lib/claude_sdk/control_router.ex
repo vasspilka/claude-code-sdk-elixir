@@ -118,27 +118,31 @@ defmodule ClaudeSDK.ControlRouter do
           String.t(),
           {:allow, map()} | {:deny, String.t()} | {:result, map()}
         ) :: map()
-  def build_response(request_id, _subtype, {:allow, permissions}) do
-    %{
-      type: "control_response",
-      request_id: request_id,
-      response: Map.merge(%{allowed: true}, permissions)
-    }
+  def build_response(request_id, subtype, {:allow, permissions}) do
+    inner = Map.merge(%{behavior: "allow", updatedInput: Map.get(permissions, :updatedInput, %{})}, permissions)
+    wrap_success(request_id, subtype, inner)
   end
 
-  def build_response(request_id, _subtype, {:deny, reason}) do
-    %{
-      type: "control_response",
-      request_id: request_id,
-      response: %{allowed: false, reason: reason}
-    }
+  def build_response(request_id, subtype, {:deny, reason}) do
+    wrap_success(request_id, subtype, %{behavior: "deny", message: reason})
   end
 
-  def build_response(request_id, _subtype, {:result, payload}) do
+  def build_response(request_id, "mcp_message" = subtype, {:result, payload}) do
+    wrap_success(request_id, subtype, %{mcp_response: payload})
+  end
+
+  def build_response(request_id, subtype, {:result, payload}) do
+    wrap_success(request_id, subtype, payload)
+  end
+
+  defp wrap_success(request_id, _subtype, inner) do
     %{
       type: "control_response",
-      request_id: request_id,
-      response: Map.put(payload, :request_id, request_id)
+      response: %{
+        subtype: "success",
+        request_id: request_id,
+        response: inner
+      }
     }
   end
 
@@ -174,10 +178,11 @@ defmodule ClaudeSDK.ControlRouter do
 
       case result do
         :allow ->
-          {:allow, %{}}
+          {:allow, %{updatedInput: input}}
 
         {:allow, opts} when is_map(opts) or is_list(opts) ->
-          {:allow, normalize_allow_opts(opts)}
+          normalized = normalize_allow_opts(opts)
+          {:allow, Map.put_new(normalized, :updatedInput, input)}
 
         :deny ->
           {:deny, "Permission denied"}
@@ -395,16 +400,22 @@ defmodule ClaudeSDK.ControlRouter do
   defp build_error_response(request_id) do
     %{
       type: "control_response",
-      request_id: request_id,
-      response: %{allowed: false, reason: "Handler error: internal error"}
+      response: %{
+        subtype: "error",
+        request_id: request_id,
+        error: "Handler error: internal error"
+      }
     }
   end
 
   defp build_deny_response(request_id, reason) do
     %{
       type: "control_response",
-      request_id: request_id,
-      response: %{allowed: false, reason: reason}
+      response: %{
+        subtype: "success",
+        request_id: request_id,
+        response: %{behavior: "deny", message: reason}
+      }
     }
   end
 end

@@ -53,8 +53,8 @@ defmodule ClaudeSDK.ControlRouterCoverageTest do
       }
 
       {:handled, response} = ControlRouter.dispatch(raw, handlers)
-      assert response.response.allowed == false
-      assert response.response.reason == "forbidden"
+      assert response.response.response.behavior == "deny"
+      assert response.response.response.message == "forbidden"
     end
   end
 
@@ -75,8 +75,8 @@ defmodule ClaudeSDK.ControlRouterCoverageTest do
       }
 
       {:handled, response} = ControlRouter.dispatch(raw, handlers)
-      assert response.response.allowed == false
-      assert response.response.reason =~ "invalid"
+      assert response.response.response.behavior == "deny"
+      assert response.response.response.message =~ "invalid"
     end
   end
 
@@ -108,7 +108,7 @@ defmodule ClaudeSDK.ControlRouterCoverageTest do
       }
 
       {:handled, response} = ControlRouter.dispatch(raw, handlers)
-      assert response.response.allowed == true
+      assert response.response.response.behavior == "allow"
     end
   end
 
@@ -135,8 +135,8 @@ defmodule ClaudeSDK.ControlRouterCoverageTest do
       }
 
       {:handled, response} = ControlRouter.dispatch(raw, handlers)
-      assert response.response.allowed == false
-      assert response.response.reason =~ "timed out"
+      assert response.response.response.behavior == "deny"
+      assert response.response.response.message =~ "timed out"
     end
   end
 
@@ -157,8 +157,8 @@ defmodule ClaudeSDK.ControlRouterCoverageTest do
       }
 
       {:handled, response} = ControlRouter.dispatch(raw, handlers)
-      assert response.response.allowed == false
-      assert response.response.reason =~ "error"
+      assert response.response.response.behavior == "deny"
+      assert response.response.response.message =~ "error"
     end
   end
 
@@ -179,8 +179,8 @@ defmodule ClaudeSDK.ControlRouterCoverageTest do
       }
 
       {:handled, response} = ControlRouter.dispatch(raw, handlers)
-      assert response.response.allowed == false
-      assert response.response.reason =~ "crashed"
+      assert response.response.response.behavior == "deny"
+      assert response.response.response.message =~ "crashed"
     end
   end
 
@@ -200,8 +200,8 @@ defmodule ClaudeSDK.ControlRouterCoverageTest do
       }
 
       {:handled_with_interrupt, response} = ControlRouter.dispatch(raw, handlers)
-      assert response.response.allowed == false
-      assert response.response.reason == "Stop right now"
+      assert response.response.response.behavior == "deny"
+      assert response.response.response.message == "Stop right now"
     end
   end
 
@@ -224,9 +224,9 @@ defmodule ClaudeSDK.ControlRouterCoverageTest do
       }
 
       {:handled, response} = ControlRouter.dispatch(raw, handlers)
-      assert response.response.allowed == true
-      assert response.response.updatedInput == %{"cmd" => "safe_ls"}
-      assert response.response.updatedPermissions == ["Read"]
+      assert response.response.response.behavior == "allow"
+      assert response.response.response.updatedInput == %{"cmd" => "safe_ls"}
+      assert response.response.response.updatedPermissions == ["Read"]
     end
   end
 
@@ -249,7 +249,7 @@ defmodule ClaudeSDK.ControlRouterCoverageTest do
       }
 
       {:handled, response} = ControlRouter.dispatch(raw, handlers)
-      assert response.response.allowed == true
+      assert response.response.response.behavior == "allow"
     end
   end
 
@@ -272,7 +272,7 @@ defmodule ClaudeSDK.ControlRouterCoverageTest do
       }
 
       {:handled, response} = ControlRouter.dispatch(raw, handlers)
-      assert response.response.valid == true
+      assert response.response.response.valid == true
     end
   end
 
@@ -320,7 +320,11 @@ defmodule ClaudeSDK.ControlRouterCoverageTest do
       }
 
       {:handled, response} = ControlRouter.dispatch(raw, handlers)
-      assert response.response == %{request_id: "req_weird_hook"}
+      assert response.response == %{
+               subtype: "success",
+               request_id: "req_weird_hook",
+               response: %{}
+             }
     end
   end
 
@@ -366,7 +370,7 @@ defmodule ClaudeSDK.ControlRouterCoverageTest do
       }
 
       {:handled, response} = ControlRouter.dispatch(raw, handlers)
-      assert response.response.allowed == true
+      assert response.response.response.behavior == "allow"
     end
   end
 
@@ -382,8 +386,8 @@ defmodule ClaudeSDK.ControlRouterCoverageTest do
       }
 
       {:handled, response} = ControlRouter.dispatch(raw, handlers)
-      assert response.response.allowed == false
-      assert response.response.reason == "Permission denied"
+      assert response.response.response.behavior == "deny"
+      assert response.response.response.message == "Permission denied"
     end
   end
 
@@ -407,7 +411,11 @@ defmodule ClaudeSDK.ControlRouterCoverageTest do
 
       {:handled, response} = ControlRouter.dispatch(raw, handlers)
       assert response.type == "control_response"
-      assert response.response == %{request_id: "req_hook_exit"}
+      assert response.response == %{
+               subtype: "success",
+               request_id: "req_hook_exit",
+               response: %{}
+             }
     end
   end
 
@@ -455,7 +463,7 @@ defmodule ClaudeSDK.ControlRouterCoverageTest do
       }
 
       {:handled, response} = ControlRouter.dispatch(raw, handlers)
-      assert response.response.direct_result == true
+      assert response.response.response.direct_result == true
     end
   end
 end

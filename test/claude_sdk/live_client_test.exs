@@ -55,12 +55,15 @@ defmodule ClaudeSDK.LiveClientTest do
 
       # First turn: establish a fact
       _messages1 =
-        Client.query(client, "Remember this secret code: XRAY42. Just say 'noted'.")
+        Client.query(
+          client,
+          "My favorite identifier string for this project is XRAY42. Please just acknowledge with 'noted'."
+        )
         |> Enum.to_list()
 
       # Second turn: recall the fact
       messages2 =
-        Client.query(client, "What was the secret code I told you?")
+        Client.query(client, "What was the identifier string I just mentioned?")
         |> Enum.to_list()
 
       text =

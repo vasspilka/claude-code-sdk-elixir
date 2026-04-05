@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Silence broken-pipe errors when the parent closes stdout early during tests.
+exec 2>/dev/null
 
 # Mock CLI that reports a non-semver version string
 if [ "$1" = "-v" ]; then echo "not-a-version"; exit 0; fi

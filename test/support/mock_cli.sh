@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Silence broken-pipe errors when the parent closes stdout early during tests.
+exec 2>/dev/null
 
 # Handle version check
 if [ "$1" = "-v" ]; then echo "99.0.0"; exit 0; fi

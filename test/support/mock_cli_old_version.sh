@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Silence broken-pipe errors when the parent closes stdout early during tests.
+exec 2>/dev/null
 
 # Mock CLI that reports an old version (below minimum 2.0.0)
 if [ "$1" = "-v" ]; then echo "1.5.0"; exit 0; fi

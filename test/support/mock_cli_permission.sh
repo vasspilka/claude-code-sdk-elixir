@@ -33,7 +33,7 @@ echo "{\"type\":\"control_request\",\"request_id\":\"req_perm_001\",\"request\":
 read -r perm_response
 
 # Check if allowed or denied
-allowed=$(echo "$perm_response" | grep -o '"allowed":true' || true)
+allowed=$(echo "$perm_response" | grep -o '"behavior":"allow"' || true)
 
 if [ -n "$allowed" ]; then
   echo "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"Tool was allowed.\"}],\"model\":\"mock-model\"},\"parent_tool_use_id\":null,\"error\":null}" 2>/dev/null || true

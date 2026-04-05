@@ -77,8 +77,8 @@ defmodule ClaudeSDK.ControlRouterTest do
 
       assert {:handled, response} = ControlRouter.dispatch(raw, handlers)
       assert response.type == "control_response"
-      assert response.request_id == "req_001"
-      assert response.response.allowed == true
+      assert response.response.request_id == "req_001"
+      assert response.response.response.behavior == "allow"
     end
 
     test "returns {:unhandled, raw} for malformed messages without request_id" do
@@ -96,8 +96,8 @@ defmodule ClaudeSDK.ControlRouterTest do
       }
 
       assert {:handled, response} = ControlRouter.dispatch(raw, handlers)
-      assert response.response.allowed == false
-      assert response.response.reason == "Not permitted"
+      assert response.response.response.behavior == "deny"
+      assert response.response.response.message == "Not permitted"
     end
 
     test "dispatches result payloads correctly" do
@@ -111,7 +111,12 @@ defmodule ClaudeSDK.ControlRouterTest do
       }
 
       assert {:handled, response} = ControlRouter.dispatch(raw, handlers)
-      assert response.response == %{data: "hello", request_id: "req_003"}
+
+      assert response.response == %{
+               subtype: "success",
+               request_id: "req_003",
+               response: %{mcp_response: %{data: "hello"}}
+             }
     end
   end
 
@@ -121,8 +126,11 @@ defmodule ClaudeSDK.ControlRouterTest do
 
       assert response == %{
                type: "control_response",
-               request_id: "req_1",
-               response: %{allowed: true}
+               response: %{
+                 subtype: "success",
+                 request_id: "req_1",
+                 response: %{behavior: "allow", updatedInput: %{}}
+               }
              }
     end
 
@@ -130,8 +138,8 @@ defmodule ClaudeSDK.ControlRouterTest do
       response =
         ControlRouter.build_response("req_1", "can_use_tool", {:allow, %{temporary: true}})
 
-      assert response.response.allowed == true
-      assert response.response.temporary == true
+      assert response.response.response.behavior == "allow"
+      assert response.response.response.temporary == true
     end
 
     test "builds deny response" do
@@ -139,8 +147,11 @@ defmodule ClaudeSDK.ControlRouterTest do
 
       assert response == %{
                type: "control_response",
-               request_id: "req_1",
-               response: %{allowed: false, reason: "Forbidden"}
+               response: %{
+                 subtype: "success",
+                 request_id: "req_1",
+                 response: %{behavior: "deny", message: "Forbidden"}
+               }
              }
     end
 
@@ -150,8 +161,11 @@ defmodule ClaudeSDK.ControlRouterTest do
 
       assert response == %{
                type: "control_response",
-               request_id: "req_1",
-               response: Map.put(payload, :request_id, "req_1")
+               response: %{
+                 subtype: "success",
+                 request_id: "req_1",
+                 response: %{mcp_response: payload}
+               }
              }
     end
   end
@@ -197,8 +211,8 @@ defmodule ClaudeSDK.ControlRouterTest do
       }
 
       {:handled, response} = ControlRouter.dispatch(raw, handlers)
-      assert response.response.allowed == false
-      assert response.response.reason == "Dangerous command"
+      assert response.response.response.behavior == "deny"
+      assert response.response.response.message == "Dangerous command"
     end
 
     test "callback returning bare :deny produces deny response" do
@@ -216,8 +230,8 @@ defmodule ClaudeSDK.ControlRouterTest do
       }
 
       {:handled, response} = ControlRouter.dispatch(raw, handlers)
-      assert response.response.allowed == false
-      assert response.response.reason == "Permission denied"
+      assert response.response.response.behavior == "deny"
+      assert response.response.response.message == "Permission denied"
     end
 
     test "callback returning {:allow, permissions} merges permissions" do
@@ -238,8 +252,8 @@ defmodule ClaudeSDK.ControlRouterTest do
       }
 
       {:handled, response} = ControlRouter.dispatch(raw, handlers)
-      assert response.response.allowed == true
-      assert response.response.updatedPermissions == ["Read", "Glob"]
+      assert response.response.response.behavior == "allow"
+      assert response.response.response.updatedPermissions == ["Read", "Glob"]
     end
   end
 
@@ -282,8 +296,8 @@ defmodule ClaudeSDK.ControlRouterTest do
       }
 
       assert {:handled, response} = ControlRouter.dispatch(raw, handlers)
-      assert response.response.a == 1
-      assert response.response.b == 2
+      assert response.response.response.a == 1
+      assert response.response.response.b == 2
     end
 
     @tag :capture_log
@@ -324,7 +338,12 @@ defmodule ClaudeSDK.ControlRouterTest do
       }
 
       assert {:handled, response} = ControlRouter.dispatch(raw, handlers)
-      assert response.response == %{request_id: "req_no_hook"}
+
+      assert response.response == %{
+               subtype: "success",
+               request_id: "req_no_hook",
+               response: %{}
+             }
     end
 
     test "arity-2 hook callback receives event and input" do
@@ -369,9 +388,9 @@ defmodule ClaudeSDK.ControlRouterTest do
 
       assert {:handled, response} = ControlRouter.dispatch(raw, handlers)
       assert response.type == "control_response"
-      assert response.request_id == "req_crash"
-      assert response.response.allowed == false
-      assert response.response.reason =~ "Handler error"
+      assert response.response.request_id == "req_crash"
+      assert response.response.subtype == "error"
+      assert response.response.error =~ "Handler error"
     end
 
     @tag :capture_log
@@ -386,8 +405,8 @@ defmodule ClaudeSDK.ControlRouterTest do
       }
 
       assert {:handled, response} = ControlRouter.dispatch(raw, handlers)
-      assert response.response.allowed == false
-      assert response.response.reason == "Invalid handler response"
+      assert response.response.response.behavior == "deny"
+      assert response.response.response.message == "Invalid handler response"
     end
 
     @tag :capture_log
@@ -402,8 +421,8 @@ defmodule ClaudeSDK.ControlRouterTest do
       }
 
       assert {:handled, response} = ControlRouter.dispatch(raw, handlers)
-      assert response.response.allowed == false
-      assert response.response.reason =~ "Handler error"
+      assert response.response.subtype == "error"
+      assert response.response.error =~ "Handler error"
     end
   end
 end

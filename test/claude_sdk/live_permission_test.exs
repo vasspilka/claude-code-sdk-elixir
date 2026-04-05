@@ -14,7 +14,7 @@ defmodule ClaudeSDK.LivePermissionTest do
   @moduletag :live
 
   @base_opts %Options{
-    max_turns: 1,
+    max_turns: 5,
     model: "claude-haiku-4-5-20251001"
   }
 
@@ -36,7 +36,7 @@ defmodule ClaudeSDK.LivePermissionTest do
       }
 
       messages =
-        ClaudeSDK.query("Read the file ./mix.exs and tell me the project name", opts)
+        ClaudeSDK.query("Read the file /etc/hosts and summarize its contents.", opts)
         |> Enum.to_list()
 
       result = find_result(messages)
@@ -62,7 +62,7 @@ defmodule ClaudeSDK.LivePermissionTest do
       }
 
       messages =
-        ClaudeSDK.query("Read the file ./mix.exs and tell me the project name", opts)
+        ClaudeSDK.query("Read the file /etc/hosts and summarize its contents.", opts)
         |> Enum.to_list()
 
       result = find_result(messages)
@@ -98,7 +98,7 @@ defmodule ClaudeSDK.LivePermissionTest do
       }
 
       messages =
-        ClaudeSDK.query("Read the file ./mix.exs", opts)
+        ClaudeSDK.query("Read the file /etc/hosts and summarize its contents.", opts)
         |> Enum.to_list()
 
       result = find_result(messages)
