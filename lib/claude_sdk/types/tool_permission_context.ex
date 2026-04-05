@@ -25,11 +25,20 @@ defmodule ClaudeSDK.Types.ToolPermissionContext do
       end
 
       # Context-aware callback with dynamic permission updates
+      alias ClaudeSDK.Types.PermissionUpdate, as: PU
+
       can_use_tool: fn tool_name, input, context ->
         Logger.info("Permission check \#{context.request_id} for \#{tool_name}")
 
-        # Allow and auto-approve this tool for future calls
-        {:allow, updated_permissions: ["Read", "Glob"]}
+        # Allow and auto-approve Read + Glob for the rest of this session
+        {:allow,
+         updated_permissions: [
+           PU.add_rules(
+             [%{tool_name: "Read"}, %{tool_name: "Glob"}],
+             :allow,
+             :session
+           )
+         ]}
       end
 
   ## Permission Results
@@ -39,7 +48,10 @@ defmodule ClaudeSDK.Types.ToolPermissionContext do
   - `:allow` — permit the tool use
   - `{:allow, opts}` — permit with options:
     - `updated_input: map()` — modified tool input to use instead
-    - `updated_permissions: [String.t()]` — tools to auto-approve going forward
+    - `updated_permissions: [map()]` — list of structured permission updates.
+      Use `ClaudeSDK.Types.PermissionUpdate` constructors (`add_rules/3`,
+      `set_mode/1`, `add_directories/2`, etc.) to build these, or pass raw
+      maps in the shape the CLI expects.
   - `:deny` — deny with default message
   - `{:deny, reason}` — deny with a custom reason string
   - `{:deny, reason, :interrupt}` — deny and interrupt the active conversation

@@ -30,6 +30,7 @@ defmodule ClaudeSDK.Transport.CommandBuilder do
   def build_args(%Options{} = opts) do
     @base_args
     |> maybe_add("--system-prompt", opts.system_prompt)
+    |> maybe_add("--system-prompt-file", opts.system_prompt_file)
     |> maybe_add("--append-system-prompt", opts.append_system_prompt)
     |> maybe_add("--model", opts.model)
     |> maybe_add("--fallback-model", opts.fallback_model)
@@ -38,6 +39,7 @@ defmodule ClaudeSDK.Transport.CommandBuilder do
     |> maybe_add_list("--disallowed-tools", opts.disallowed_tools)
     |> maybe_add("--max-turns", opts.max_turns)
     |> maybe_add("--max-budget-usd", opts.max_budget_usd)
+    |> add_task_budget(opts.task_budget)
     |> add_max_thinking_tokens(opts.max_thinking_tokens, opts.thinking)
     |> add_permission_mode(opts.permission_mode)
     |> add_permission_prompt_tool(opts.can_use_tool, opts.permission_prompt_tool_name)
@@ -121,6 +123,21 @@ defmodule ClaudeSDK.Transport.CommandBuilder do
   defp add_tools(args, nil), do: args
   defp add_tools(args, :default), do: args ++ ["--tools", "default"]
   defp add_tools(args, tools) when is_list(tools), do: args ++ ["--tools", Enum.join(tools, ",")]
+
+  # --task-budget expects the numeric `total` value. Accepts either an
+  # integer/string directly or a map like %{total: 10} / %{"total" => 10}.
+  defp add_task_budget(args, nil), do: args
+  defp add_task_budget(args, n) when is_integer(n), do: args ++ ["--task-budget", to_string(n)]
+  defp add_task_budget(args, s) when is_binary(s), do: args ++ ["--task-budget", s]
+
+  defp add_task_budget(args, %{} = budget) do
+    case Map.get(budget, :total) || Map.get(budget, "total") do
+      nil -> args
+      total -> args ++ ["--task-budget", to_string(total)]
+    end
+  end
+
+  defp add_task_budget(args, _), do: args
 
   defp add_permission_mode(args, nil), do: args
 
@@ -208,6 +225,10 @@ defmodule ClaudeSDK.Transport.CommandBuilder do
   end
 
   defp add_output_format(args, nil), do: args
+
+  defp add_output_format(args, {:json_schema, schema}) when is_map(schema) do
+    args ++ ["--json-schema", Jason.encode!(schema)]
+  end
 
   defp add_output_format(args, %{"type" => "json_schema", "schema" => schema})
        when is_map(schema) do

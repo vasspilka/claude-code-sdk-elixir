@@ -90,8 +90,15 @@ defmodule ClaudeSDK do
     the subprocess is cleaned up automatically via `Stream.resource/3`'s after
     callback. However, the CLI may have already performed work (tool calls,
     file edits) before the stream was halted.
-  - **Single consumption** — each stream can only be consumed once. Consuming
-    it again spawns a new subprocess and a new CLI session.
+  - **Single consumption** — each stream is intended to be consumed once.
+
+    > #### Warning {: .warning}
+    >
+    > Re-enumerating a query stream (e.g. calling `Enum.to_list/1` twice on the
+    > same stream) silently spawns a **new** CLI subprocess and starts a **new**
+    > session each time. Side effects (tool calls, file edits, token spend) are
+    > repeated. Bind the stream to a variable and consume it exactly once, or
+    > call `query/2` again if you need a fresh run.
   - **Cleanup** — the subprocess is always stopped when the stream finishes,
     whether by natural completion, early halt, or error.
   """
@@ -113,14 +120,33 @@ defmodule ClaudeSDK do
   def query(prompt, %Options{} = opts) do
     case Options.validate(opts) do
       :ok ->
+        counter = :counters.new(1, [])
+
         Stream.resource(
-          fn -> start_subprocess(prompt, opts) end,
+          fn ->
+            warn_if_reenumerated(counter)
+            start_subprocess(prompt, opts)
+          end,
           &receive_messages/1,
           &cleanup/1
         )
 
       {:error, reason} ->
         raise ArgumentError, reason
+    end
+  end
+
+  defp warn_if_reenumerated(counter) do
+    n = :counters.get(counter, 1)
+    :counters.add(counter, 1, 1)
+
+    if n > 0 do
+      require Logger
+
+      Logger.warning(
+        "ClaudeSDK.query/2 stream is being re-enumerated (pass #{n + 1}) — this spawns " <>
+          "a NEW subprocess and session, repeating any side effects. See ClaudeSDK.query/2 docs."
+      )
     end
   end
 

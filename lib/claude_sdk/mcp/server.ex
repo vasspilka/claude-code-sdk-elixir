@@ -116,94 +116,20 @@ defmodule ClaudeSDK.MCP.Server do
       ) do
     tool_name = params["name"] || ""
     arguments = params["arguments"] || %{}
+    start = System.monotonic_time()
 
-    case Map.get(tool_index, {server_name, tool_name}) do
-      nil ->
-        {:result,
-         %{
-           mcp_response: %{
-             "jsonrpc" => "2.0",
-             "id" => id,
-             "error" => %{
-               "code" => -32601,
-               "message" => "Tool not found: #{tool_name}"
-             }
-           }
-         }}
+    {outcome, result} =
+      do_tools_call(server_name, tool_name, arguments, id, tool_index)
 
-      %Tool{handler: handler, input_schema: schema} ->
-        case validate_arguments(arguments, schema) do
-          {:error, validation_error} ->
-            {:result,
-             %{
-               mcp_response: %{
-                 "jsonrpc" => "2.0",
-                 "id" => id,
-                 "result" => %{
-                   "content" => [
-                     %{"type" => "text", "text" => "Validation error: #{validation_error}"}
-                   ],
-                   "isError" => true
-                 }
-               }
-             }}
+    duration = System.monotonic_time() - start
 
-          :ok ->
-            try do
-              case handler.(arguments) do
-                {:ok, result} ->
-                  content = format_result(result)
+    ClaudeSDK.Telemetry.mcp_tool_stop(duration, %{
+      server: server_name,
+      tool: tool_name,
+      outcome: outcome
+    })
 
-                  {:result,
-                   %{
-                     mcp_response: %{
-                       "jsonrpc" => "2.0",
-                       "id" => id,
-                       "result" => %{
-                         "content" => content,
-                         "isError" => false
-                       }
-                     }
-                   }}
-
-                {:error, reason} ->
-                  {:result,
-                   %{
-                     mcp_response: %{
-                       "jsonrpc" => "2.0",
-                       "id" => id,
-                       "result" => %{
-                         "content" => [%{"type" => "text", "text" => to_string(reason)}],
-                         "isError" => true
-                       }
-                     }
-                   }}
-              end
-            rescue
-              e ->
-                Logger.warning(
-                  "MCP tool handler for #{tool_name} raised: #{Exception.message(e)}"
-                )
-
-                {:result,
-                 %{
-                   mcp_response: %{
-                     "jsonrpc" => "2.0",
-                     "id" => id,
-                     "result" => %{
-                       "content" => [
-                         %{
-                           "type" => "text",
-                           "text" => "Tool handler error: internal error"
-                         }
-                       ],
-                       "isError" => true
-                     }
-                   }
-                 }}
-            end
-        end
-    end
+    result
   end
 
   def handle_jsonrpc(server_name, %{"method" => "tools/list", "id" => id}, tool_index) do
@@ -211,11 +137,15 @@ defmodule ClaudeSDK.MCP.Server do
       tool_index
       |> Enum.filter(fn {{sn, _}, _} -> sn == server_name end)
       |> Enum.map(fn {{_, _}, tool} ->
-        %{
+        base = %{
           "name" => tool.name,
           "description" => tool.description,
           "inputSchema" => tool.input_schema
         }
+
+        base
+        |> maybe_put("annotations", tool.annotations)
+        |> maybe_put("_meta", meta_for_tool(tool))
       end)
 
     {:result,
@@ -274,6 +204,102 @@ defmodule ClaudeSDK.MCP.Server do
   def handle_jsonrpc(_server_name, _message, _tool_index) do
     Logger.debug("Received unrecognized JSONRPC message (no 'id' or 'method' field)")
     {:result, %{}}
+  end
+
+  defp do_tools_call(server_name, tool_name, arguments, id, tool_index) do
+    case Map.get(tool_index, {server_name, tool_name}) do
+      nil ->
+        {:tool_not_found,
+         {:result,
+          %{
+            mcp_response: %{
+              "jsonrpc" => "2.0",
+              "id" => id,
+              "error" => %{
+                "code" => -32601,
+                "message" => "Tool not found: #{tool_name}"
+              }
+            }
+          }}}
+
+      %Tool{handler: handler, input_schema: schema} = tool ->
+        case validate_arguments(arguments, schema) do
+          {:error, validation_error} ->
+            {:validation_error,
+             {:result,
+              %{
+                mcp_response: %{
+                  "jsonrpc" => "2.0",
+                  "id" => id,
+                  "result" => %{
+                    "content" => [
+                      %{"type" => "text", "text" => "Validation error: #{validation_error}"}
+                    ],
+                    "isError" => true
+                  }
+                }
+              }}}
+
+          :ok ->
+            try do
+              case handler.(arguments) do
+                {:ok, result} ->
+                  content = format_result(result, tool.max_result_size_chars)
+
+                  result_map =
+                    %{"content" => content, "isError" => false}
+                    |> maybe_put_meta(tool)
+
+                  {:ok,
+                   {:result,
+                    %{
+                      mcp_response: %{
+                        "jsonrpc" => "2.0",
+                        "id" => id,
+                        "result" => result_map
+                      }
+                    }}}
+
+                {:error, reason} ->
+                  {:error,
+                   {:result,
+                    %{
+                      mcp_response: %{
+                        "jsonrpc" => "2.0",
+                        "id" => id,
+                        "result" => %{
+                          "content" => [%{"type" => "text", "text" => to_string(reason)}],
+                          "isError" => true
+                        }
+                      }
+                    }}}
+              end
+            rescue
+              e ->
+                Logger.warning(
+                  "MCP tool handler for #{tool_name} raised: #{Exception.message(e)}"
+                )
+
+                {:crash,
+                 {:result,
+                  %{
+                    mcp_response: %{
+                      "jsonrpc" => "2.0",
+                      "id" => id,
+                      "result" => %{
+                        "content" => [
+                          %{
+                            "type" => "text",
+                            "text" => "Tool handler error: internal error"
+                          }
+                        ],
+                        "isError" => true
+                      }
+                    }
+                  }}}
+            end
+        end
+    end
   end
 
   # Basic validation of tool arguments against the tool's input schema.
@@ -339,35 +365,61 @@ defmodule ClaudeSDK.MCP.Server do
   defp inspect_type(nil), do: "null"
   defp inspect_type(_), do: "unknown"
 
-  # 1 MB size limit for MCP results
-  @max_result_bytes 1_048_576
+  # 1 MB default size limit for MCP text results (overridable per tool via
+  # Tool.max_result_size_chars).
+  @default_max_result_bytes 1_048_576
 
-  defp format_result(result) when is_binary(result) do
-    [%{"type" => "text", "text" => maybe_truncate(result)}]
+  defp format_result(result, max_bytes) when is_binary(result) do
+    [%{"type" => "text", "text" => maybe_truncate(result, max_bytes)}]
   end
 
-  defp format_result(result) when is_list(result), do: result
+  defp format_result(result, _max_bytes) when is_list(result), do: result
 
-  defp format_result(result) when is_map(result) do
+  defp format_result(result, max_bytes) when is_map(result) do
     text = Jason.encode!(result)
-    [%{"type" => "text", "text" => maybe_truncate(text)}]
+    [%{"type" => "text", "text" => maybe_truncate(text, max_bytes)}]
   end
 
-  defp format_result(result) do
+  defp format_result(result, max_bytes) do
     text = inspect(result)
-    [%{"type" => "text", "text" => maybe_truncate(text)}]
+    [%{"type" => "text", "text" => maybe_truncate(text, max_bytes)}]
   end
 
-  defp maybe_truncate(text) when byte_size(text) > @max_result_bytes do
-    original_size = byte_size(text)
+  defp maybe_truncate(text, max_bytes) do
+    limit = max_bytes || @default_max_result_bytes
 
-    Logger.warning("MCP tool result truncated: #{original_size} bytes exceeds 1MB limit")
+    if byte_size(text) > limit do
+      Logger.warning(
+        "MCP tool result truncated: #{byte_size(text)} bytes exceeds #{limit} byte limit"
+      )
 
-    truncated = truncate_utf8_safe(text, @max_result_bytes)
-    truncated <> "\n... [truncated: result exceeded 1MB limit]"
+      truncated = truncate_utf8_safe(text, limit)
+      truncated <> "\n... [truncated: result exceeded #{format_limit(limit)} limit]"
+    else
+      text
+    end
   end
 
-  defp maybe_truncate(text), do: text
+  defp format_limit(1_048_576), do: "1MB"
+  defp format_limit(n) when n >= 1_048_576, do: "#{div(n, 1_048_576)}MB"
+  defp format_limit(n) when n >= 1024, do: "#{div(n, 1024)}KB"
+  defp format_limit(n), do: "#{n} byte"
+
+  defp maybe_put(map, _key, nil), do: map
+  defp maybe_put(map, _key, empty) when empty == %{}, do: map
+  defp maybe_put(map, key, value), do: Map.put(map, key, value)
+
+  defp meta_for_tool(%Tool{max_result_size_chars: n}) when is_integer(n) and n > 0,
+    do: %{"anthropic/maxResultSizeChars" => n}
+
+  defp meta_for_tool(_), do: nil
+
+  defp maybe_put_meta(result_map, %Tool{} = tool) do
+    case meta_for_tool(tool) do
+      nil -> result_map
+      meta -> Map.put(result_map, "_meta", meta)
+    end
+  end
 
   # Truncate to at most max_bytes while preserving valid UTF-8.
   # binary_part/3 can split a multi-byte codepoint; this trims any

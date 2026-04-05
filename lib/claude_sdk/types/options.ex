@@ -26,7 +26,9 @@ defmodule ClaudeSDK.Types.Options do
 
   ### Prompt
 
-  - `system_prompt` — Override the default system prompt entirely.
+  - `system_prompt` — Override the default system prompt entirely (string).
+  - `system_prompt_file` — Path to a file whose contents replace the default system prompt.
+    Maps to `--system-prompt-file`. Mutually exclusive with `system_prompt`.
   - `append_system_prompt` — Append text to the default system prompt.
 
   ### Model
@@ -48,6 +50,8 @@ defmodule ClaudeSDK.Types.Options do
   - `max_turns` — Maximum number of agentic turns before stopping.
   - `max_budget_usd` — Maximum spend in USD for the query.
   - `max_thinking_tokens` — Maximum tokens allocated for extended thinking.
+  - `task_budget` — Task budget map, e.g. `%{total: 10}`. Caps the total number of
+    sub-agent Task tool invocations. Maps to `--task-budget`.
 
   ### Permissions
 
@@ -72,12 +76,21 @@ defmodule ClaudeSDK.Types.Options do
 
   ### Structured Output
 
-  - `json_schema` — JSON Schema map. When set, the model's text response is constrained
-    to match this schema. The JSON string appears in `ResultMessage.result`.
-  - `output_format` — JSON Schema map for CLI-level structured output. When set, the
-    parsed result appears in `ResultMessage.structured_output`. This is separate from
-    `json_schema` — use `json_schema` to constrain the model's response, and `output_format`
-    to control the CLI's output structure.
+  Prefer `output_format` — it is the unified field.
+
+  - `output_format` — structured output specification. Accepts either:
+    - a bare JSON Schema map (shorthand for json_schema output), or
+    - a tagged tuple `{:json_schema, schema_map}`, or
+    - the fully expanded `%{"type" => "json_schema", "schema" => schema_map}`.
+
+    Maps to the CLI's `--json-schema` flag. The parsed result appears in
+    `ResultMessage.structured_output`.
+
+  - `json_schema` — **alias for the most common `output_format` shape.** Accepts a
+    bare JSON Schema map and is equivalent to setting `output_format: schema`.
+    Retained for backwards compatibility; new code should use `output_format`.
+
+  The two fields are mutually exclusive — set one or the other, not both.
 
   ### MCP (Model Context Protocol)
 
@@ -94,12 +107,6 @@ defmodule ClaudeSDK.Types.Options do
 
   - `thinking` — Thinking mode configuration map. Keys: `"type"` (`"adaptive"`, `"enabled"`,
     or `"disabled"`) and optionally `"budget_tokens"` (integer).
-
-  ### Output Format
-
-  - `output_format` — JSON Schema map for CLI-level structured output. Maps to
-    `--json-schema` (same underlying CLI flag as `json_schema`; they are mutually
-    exclusive). Result appears in `ResultMessage.structured_output`.
 
   ### Sandbox
 
@@ -123,6 +130,13 @@ defmodule ClaudeSDK.Types.Options do
     When set, the SDK enables `:stderr_to_stdout` on the Erlang port and routes
     non-JSON lines (which are stderr) to this callback. When not set, stderr goes
     to the VM's stderr (the terminal). Signature: `(String.t() -> any())`.
+
+  ### Transport Buffering
+
+  - `max_line_buffer_size` — Maximum bytes the NDJSON line buffer may grow to
+    before discarding the in-progress message (default: 10_485_760 = 10 MB).
+    Increase if your MCP tools return very large payloads; decrease to fail
+    faster on runaway CLI output.
 
   ### Miscellaneous
 
@@ -172,6 +186,7 @@ defmodule ClaudeSDK.Types.Options do
 
           # Prompt options
           system_prompt: String.t() | nil,
+          system_prompt_file: String.t() | nil,
           append_system_prompt: String.t() | nil,
 
           # Model options
@@ -187,6 +202,7 @@ defmodule ClaudeSDK.Types.Options do
           max_turns: pos_integer() | nil,
           max_budget_usd: float() | nil,
           max_thinking_tokens: pos_integer() | nil,
+          task_budget: map() | nil,
 
           # Permission mode
           permission_mode: permission_mode() | nil,
@@ -218,7 +234,7 @@ defmodule ClaudeSDK.Types.Options do
 
           # Structured output
           json_schema: map() | nil,
-          output_format: map() | nil,
+          output_format: map() | {:json_schema, map()} | nil,
 
           # Settings
           settings: map() | nil,
@@ -270,12 +286,16 @@ defmodule ClaudeSDK.Types.Options do
           extra_args: [String.t()],
 
           # Transport module (must implement ClaudeSDK.Transport behaviour)
-          transport_module: module()
+          transport_module: module(),
+
+          # NDJSON line buffer cap (bytes)
+          max_line_buffer_size: pos_integer()
         }
 
   defstruct cli_path: nil,
             log_file: nil,
             system_prompt: nil,
+            system_prompt_file: nil,
             append_system_prompt: nil,
             model: nil,
             fallback_model: nil,
@@ -285,6 +305,7 @@ defmodule ClaudeSDK.Types.Options do
             max_turns: nil,
             max_budget_usd: nil,
             max_thinking_tokens: nil,
+            task_budget: nil,
             permission_mode: nil,
             can_use_tool: nil,
             permission_prompt_tool_name: nil,
@@ -318,7 +339,8 @@ defmodule ClaudeSDK.Types.Options do
             hook_timeout_ms: 30_000,
             on_stderr: nil,
             extra_args: [],
-            transport_module: ClaudeSDK.Transport.Subprocess
+            transport_module: ClaudeSDK.Transport.Subprocess,
+            max_line_buffer_size: 10_485_760
 
   @valid_permission_modes [nil, :default, :accept_edits, :plan, :bypass_permissions, :dont_ask]
   @valid_efforts [nil, "low", "medium", "high", "max"]
@@ -348,11 +370,24 @@ defmodule ClaudeSDK.Types.Options do
          :ok <- validate_session_options(opts),
          :ok <- validate_permission_options(opts),
          :ok <- validate_output_options(opts),
+         :ok <- validate_system_prompt_options(opts),
          :ok <- validate_setting_sources(opts.setting_sources),
-         :ok <- validate_extra_args(opts.extra_args) do
+         :ok <- validate_extra_args(opts.extra_args),
+         :ok <- validate_line_buffer_size(opts.max_line_buffer_size) do
       :ok
     end
   end
+
+  defp validate_system_prompt_options(%{system_prompt: sp, system_prompt_file: spf})
+       when is_binary(sp) and is_binary(spf),
+       do: {:error, "cannot set both system_prompt and system_prompt_file — use one or the other"}
+
+  defp validate_system_prompt_options(_), do: :ok
+
+  defp validate_line_buffer_size(n) when is_integer(n) and n > 0, do: :ok
+
+  defp validate_line_buffer_size(n),
+    do: {:error, "max_line_buffer_size must be a positive integer, got: #{inspect(n)}"}
 
   defp validate_max_turns(nil), do: :ok
   defp validate_max_turns(n) when is_integer(n) and n > 0, do: :ok

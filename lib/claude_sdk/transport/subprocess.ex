@@ -127,7 +127,7 @@ defmodule ClaudeSDK.Transport.Subprocess do
         port: port,
         caller: caller,
         caller_monitor: caller_monitor,
-        buffer: LineBuffer.new(),
+        buffer: LineBuffer.new(options.max_line_buffer_size),
         cli_path: cli_path,
         options: options
       }
@@ -226,7 +226,7 @@ defmodule ClaudeSDK.Transport.Subprocess do
         # Notify the caller so the overflow is visible in the message stream,
         # then reset buffer and continue; subsequent messages can still be processed.
         send(state.caller, {:claude_buffer_overflow, byte_size(state.buffer.buffer <> chunk)})
-        {:noreply, %{state | buffer: LineBuffer.new()}}
+        {:noreply, %{state | buffer: LineBuffer.new(state.options.max_line_buffer_size)}}
     end
   end
 

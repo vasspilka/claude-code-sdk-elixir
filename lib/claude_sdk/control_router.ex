@@ -53,44 +53,62 @@ defmodule ClaudeSDK.ControlRouter do
   def dispatch(%{"request_id" => request_id, "request" => request} = raw, handlers)
       when is_binary(request_id) and is_map(request) do
     subtype = request["subtype"]
+    start = System.monotonic_time()
 
-    case Map.get(handlers, subtype) do
-      nil ->
-        {:unhandled, raw}
+    result =
+      case Map.get(handlers, subtype) do
+        nil ->
+          {:unhandled, raw}
 
-      handler when is_function(handler, 1) ->
-        try do
-          # Include request_id in the request so handlers can access it
-          # (e.g. ToolPermissionContext needs the envelope's request_id)
-          enriched_request = Map.put_new(request, "request_id", request_id)
-          result = normalize_handler_result(handler.(enriched_request))
+        handler when is_function(handler, 1) ->
+          dispatch_with_handler(handler, request_id, request, subtype)
+      end
 
-          case result do
-            {:deny_and_interrupt, reason} ->
-              response = build_response(request_id, subtype, {:deny, reason})
-              {:handled_with_interrupt, response}
+    duration = System.monotonic_time() - start
+    outcome = dispatch_outcome(result)
 
-            {tag, _} when tag in [:allow, :deny, :result] ->
-              response = build_response(request_id, subtype, result)
-              {:handled, response}
+    ClaudeSDK.Telemetry.control_request_stop(duration, %{
+      subtype: subtype || "",
+      outcome: outcome
+    })
 
-            other ->
-              Logger.warning(
-                "Handler for #{subtype} returned unexpected value: #{inspect(other)}"
-              )
-
-              {:handled, build_deny_response(request_id, "Invalid handler response")}
-          end
-        rescue
-          e ->
-            Logger.warning("Handler for #{subtype} raised: #{Exception.message(e)}")
-
-            {:handled, build_error_response(request_id)}
-        end
-    end
+    result
   end
 
   def dispatch(raw, _handlers), do: {:unhandled, raw}
+
+  defp dispatch_outcome({:handled, _}), do: :handled
+  defp dispatch_outcome({:handled_with_interrupt, _}), do: :handled_with_interrupt
+  defp dispatch_outcome({:unhandled, _}), do: :unhandled
+
+  defp dispatch_with_handler(handler, request_id, request, subtype) do
+    try do
+      # Include request_id in the request so handlers can access it
+      # (e.g. ToolPermissionContext needs the envelope's request_id)
+      enriched_request = Map.put_new(request, "request_id", request_id)
+      result = normalize_handler_result(handler.(enriched_request))
+
+      case result do
+        {:deny_and_interrupt, reason} ->
+          response = build_response(request_id, subtype, {:deny, reason})
+          {:handled_with_interrupt, response}
+
+        {tag, _} when tag in [:allow, :deny, :result] ->
+          response = build_response(request_id, subtype, result)
+          {:handled, response}
+
+        other ->
+          Logger.warning("Handler for #{subtype} returned unexpected value: #{inspect(other)}")
+
+          {:handled, build_deny_response(request_id, "Invalid handler response")}
+      end
+    rescue
+      e ->
+        Logger.warning("Handler for #{subtype} raised: #{Exception.message(e)}")
+
+        {:handled, build_error_response(request_id)}
+    end
+  end
 
   @doc """
   Build a control_response map from a handler result.
@@ -253,12 +271,12 @@ defmodule ClaudeSDK.ControlRouter do
     end)
   end
 
-  defp run_single_hook_callback(callback, _hook_event, hook_input, timeout) do
-    run_with_timeout(fn -> callback.(hook_input) end, timeout)
+  defp run_single_hook_callback(callback, hook_event, hook_input, timeout) do
+    run_with_timeout(fn -> callback.(hook_input) end, timeout, hook_event)
   end
 
   defp run_single_hook_callback_2(callback, hook_event, hook_input, timeout) do
-    run_with_timeout(fn -> callback.(hook_event, hook_input) end, timeout)
+    run_with_timeout(fn -> callback.(hook_event, hook_input) end, timeout, hook_event)
   end
 
   defp run_permission_callback(fun, timeout) do
@@ -298,9 +316,10 @@ defmodule ClaudeSDK.ControlRouter do
     end
   end
 
-  defp run_with_timeout(fun, timeout) do
+  defp run_with_timeout(fun, timeout, hook_event) do
     caller = self()
     ref = make_ref()
+    start = System.monotonic_time()
 
     {pid, monitor_ref} =
       spawn_monitor(fn ->
@@ -313,26 +332,36 @@ defmodule ClaudeSDK.ControlRouter do
         end
       end)
 
-    receive do
-      {^ref, {:ok, result}} ->
-        Process.demonitor(monitor_ref, [:flush])
-        normalize_hook_result(result)
+    {outcome, return} =
+      receive do
+        {^ref, {:ok, result}} ->
+          Process.demonitor(monitor_ref, [:flush])
+          {:ok, normalize_hook_result(result)}
 
-      {^ref, {:error, message}} ->
-        Process.demonitor(monitor_ref, [:flush])
-        Logger.warning("Hook callback raised: #{message}")
-        {:result, %{}}
+        {^ref, {:error, message}} ->
+          Process.demonitor(monitor_ref, [:flush])
+          Logger.warning("Hook callback raised: #{message}")
+          {:crash, {:result, %{}}}
 
-      {:DOWN, ^monitor_ref, :process, ^pid, reason} ->
-        Logger.warning("Hook callback exited: #{inspect(reason)}")
-        {:result, %{}}
-    after
-      timeout ->
-        Process.demonitor(monitor_ref, [:flush])
-        Process.exit(pid, :kill)
-        Logger.warning("Hook callback timed out after #{timeout}ms")
-        {:result, %{}}
-    end
+        {:DOWN, ^monitor_ref, :process, ^pid, reason} ->
+          Logger.warning("Hook callback exited: #{inspect(reason)}")
+          {:crash, {:result, %{}}}
+      after
+        timeout ->
+          Process.demonitor(monitor_ref, [:flush])
+          Process.exit(pid, :kill)
+          Logger.warning("Hook callback timed out after #{timeout}ms")
+          {:timeout, {:result, %{}}}
+      end
+
+    duration = System.monotonic_time() - start
+
+    ClaudeSDK.Telemetry.hook_callback_stop(duration, %{
+      event: hook_event,
+      outcome: outcome
+    })
+
+    return
   end
 
   defp normalize_hook_result(:ok), do: {:result, %{}}

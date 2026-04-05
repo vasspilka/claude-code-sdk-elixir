@@ -43,6 +43,28 @@ defmodule ClaudeSDK.Telemetry do
   - Measurements: `%{duration: integer()}` (monotonic nanoseconds)
   - Metadata: `%{}`
 
+  ### `[:claude_sdk, :control_request, :stop]`
+
+  Emitted after a `control_request` is dispatched to a handler (or ignored
+  when no handler is registered).
+
+  - Measurements: `%{duration: integer()}` (monotonic nanoseconds)
+  - Metadata: `%{subtype: String.t(), outcome: :handled | :handled_with_interrupt | :unhandled}`
+
+  ### `[:claude_sdk, :mcp_tool, :stop]`
+
+  Emitted after an in-process MCP tool handler returns (or raises).
+
+  - Measurements: `%{duration: integer()}` (monotonic nanoseconds)
+  - Metadata: `%{server: String.t(), tool: String.t(), outcome: :ok | :error | :crash | :tool_not_found | :validation_error}`
+
+  ### `[:claude_sdk, :hook_callback, :stop]`
+
+  Emitted after each hook callback runs.
+
+  - Measurements: `%{duration: integer()}` (monotonic nanoseconds)
+  - Metadata: `%{event: String.t(), outcome: :ok | :crash | :timeout}`
+
   ## Example
 
       :telemetry.attach_many(
@@ -99,6 +121,33 @@ defmodule ClaudeSDK.Telemetry do
   def query_stop(duration, metadata \\ %{}) do
     :telemetry.execute(
       [:claude_sdk, :query, :stop],
+      %{duration: duration},
+      metadata
+    )
+  end
+
+  @doc false
+  def control_request_stop(duration, metadata \\ %{}) do
+    :telemetry.execute(
+      [:claude_sdk, :control_request, :stop],
+      %{duration: duration},
+      metadata
+    )
+  end
+
+  @doc false
+  def mcp_tool_stop(duration, metadata \\ %{}) do
+    :telemetry.execute(
+      [:claude_sdk, :mcp_tool, :stop],
+      %{duration: duration},
+      metadata
+    )
+  end
+
+  @doc false
+  def hook_callback_stop(duration, metadata \\ %{}) do
+    :telemetry.execute(
+      [:claude_sdk, :hook_callback, :stop],
       %{duration: duration},
       metadata
     )

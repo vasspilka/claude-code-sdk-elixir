@@ -12,37 +12,44 @@ defmodule ClaudeSDK.Transport.LineBuffer do
 
   require Logger
 
-  # 10 MB — generous limit to catch runaway output without rejecting large tool results
-  @max_buffer_bytes 10_485_760
+  # 10 MB — generous default to catch runaway output without rejecting large tool results
+  @default_max_buffer_bytes 10_485_760
 
-  @type t :: %__MODULE__{buffer: String.t()}
+  @type t :: %__MODULE__{buffer: String.t(), max_bytes: pos_integer()}
 
-  defstruct buffer: ""
+  defstruct buffer: "", max_bytes: @default_max_buffer_bytes
 
-  @doc "Create a new empty line buffer."
-  @spec new() :: t()
-  def new, do: %__MODULE__{}
+  @doc "Create a new empty line buffer with a configurable byte cap."
+  @spec new(pos_integer()) :: t()
+  def new(max_bytes \\ @default_max_buffer_bytes) when is_integer(max_bytes) and max_bytes > 0,
+    do: %__MODULE__{max_bytes: max_bytes}
+
+  @doc "Returns the default max buffer size in bytes."
+  @spec default_max_bytes() :: pos_integer()
+  def default_max_bytes, do: @default_max_buffer_bytes
 
   @doc """
   Accumulate a partial chunk (from a Port `:noeol` message).
 
   Returns `{:ok, updated_buffer}` on success, or `{:error, :buffer_overflow}`
-  if the accumulated data exceeds the 10MB limit. On overflow the buffer is
-  reset (the in-progress message is lost) and an error-level log is emitted.
+  if the accumulated data exceeds the buffer's `max_bytes` limit. On overflow
+  the buffer is reset (the in-progress message is lost) and an error-level log
+  is emitted.
   """
   @spec accumulate(t(), String.t()) :: {:ok, t()} | {:error, :buffer_overflow}
-  def accumulate(%__MODULE__{buffer: buf}, chunk) when is_binary(chunk) do
+  def accumulate(%__MODULE__{buffer: buf, max_bytes: max_bytes} = state, chunk)
+      when is_binary(chunk) do
     full = buf <> chunk
 
-    if byte_size(full) > @max_buffer_bytes do
+    if byte_size(full) > max_bytes do
       Logger.error(
-        "LineBuffer exceeded #{div(@max_buffer_bytes, 1_048_576)}MB limit " <>
+        "LineBuffer exceeded #{format_mb(max_bytes)} limit " <>
           "(#{byte_size(full)} bytes), discarding buffer — data has been lost"
       )
 
       {:error, :buffer_overflow}
     else
-      {:ok, %__MODULE__{buffer: full}}
+      {:ok, %{state | buffer: full}}
     end
   end
 
@@ -55,9 +62,10 @@ defmodule ClaudeSDK.Transport.LineBuffer do
   Returns `{new_buffer, {:ok, parsed_map} | {:error, reason}}`.
   """
   @spec flush(t(), String.t()) :: {t(), {:ok, map()} | {:error, term()}}
-  def flush(%__MODULE__{buffer: buf}, eol_data) when is_binary(eol_data) do
+  def flush(%__MODULE__{buffer: buf, max_bytes: max_bytes}, eol_data)
+      when is_binary(eol_data) do
     full_line = if buf == "", do: eol_data, else: buf <> eol_data
-    {new(), parse_line(full_line)}
+    {new(max_bytes), parse_line(full_line, max_bytes)}
   end
 
   @doc """
@@ -69,19 +77,20 @@ defmodule ClaudeSDK.Transport.LineBuffer do
   Lines that are not valid JSON are logged and skipped.
   """
   @spec append(t(), String.t()) :: {t(), [map()]}
-  def append(%__MODULE__{buffer: buf} = _state, data) when is_binary(data) do
+  def append(%__MODULE__{buffer: buf, max_bytes: max_bytes} = state, data)
+      when is_binary(data) do
     full = buf <> data
 
-    if byte_size(full) > @max_buffer_bytes do
+    if byte_size(full) > max_bytes do
       Logger.error(
-        "LineBuffer exceeded #{div(@max_buffer_bytes, 1_048_576)}MB limit " <>
+        "LineBuffer exceeded #{format_mb(max_bytes)} limit " <>
           "(#{byte_size(full)} bytes), discarding buffer — data has been lost"
       )
 
-      {%__MODULE__{buffer: ""}, []}
+      {%{state | buffer: ""}, []}
     else
-      {remaining, messages} = extract_lines(full)
-      {%__MODULE__{buffer: remaining}, messages}
+      {remaining, messages} = extract_lines(full, max_bytes)
+      {%{state | buffer: remaining}, messages}
     end
   end
 
@@ -90,36 +99,39 @@ defmodule ClaudeSDK.Transport.LineBuffer do
 
   Returns `{:ok, map}` or `{:error, reason}`.
   """
-  @spec parse_line(String.t()) :: {:ok, map()} | {:error, term()}
-  def parse_line(line) do
+  @spec parse_line(String.t(), pos_integer()) :: {:ok, map()} | {:error, term()}
+  def parse_line(line, max_bytes \\ @default_max_buffer_bytes) do
     trimmed = String.trim(line)
 
     cond do
       trimmed == "" -> {:error, :empty}
-      byte_size(trimmed) > @max_buffer_bytes -> {:error, :line_too_large}
+      byte_size(trimmed) > max_bytes -> {:error, :line_too_large}
       true -> Jason.decode(trimmed)
     end
   end
 
-  defp extract_lines(data) do
-    extract_lines(data, [])
+  defp extract_lines(data, max_bytes) do
+    extract_lines(data, max_bytes, [])
   end
 
-  defp extract_lines(data, acc) do
+  defp extract_lines(data, max_bytes, acc) do
     case String.split(data, "\n", parts: 2) do
       [only] ->
         # No newline found — everything stays in buffer
         {only, Enum.reverse(acc)}
 
       [line, rest] ->
-        case parse_line(line) do
+        case parse_line(line, max_bytes) do
           {:ok, parsed} ->
-            extract_lines(rest, [parsed | acc])
+            extract_lines(rest, max_bytes, [parsed | acc])
 
           {:error, _} ->
             # Skip non-JSON lines (e.g. stderr leaking, empty lines)
-            extract_lines(rest, acc)
+            extract_lines(rest, max_bytes, acc)
         end
     end
   end
+
+  defp format_mb(bytes) when bytes >= 1_048_576, do: "#{div(bytes, 1_048_576)}MB"
+  defp format_mb(bytes), do: "#{bytes}B"
 end
