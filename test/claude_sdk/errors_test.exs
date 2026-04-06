@@ -71,6 +71,41 @@ defmodule ClaudeSDK.ErrorsTest do
     end
   end
 
+  describe "ProcessExitError" do
+    test "with exit code only" do
+      error = ClaudeSDK.ProcessExitError.exception(exit_code: 1)
+      assert error.message =~ "exited with status 1"
+      assert error.exit_code == 1
+      assert error.stderr == ""
+    end
+
+    test "with exit code and stderr" do
+      error = ClaudeSDK.ProcessExitError.exception(exit_code: 2, stderr: "Error: segfault")
+      assert error.message =~ "exited with status 2"
+      assert error.message =~ "Stderr:"
+      assert error.message =~ "Error: segfault"
+      assert error.exit_code == 2
+      assert error.stderr == "Error: segfault"
+    end
+
+    test "with empty stderr does not include Stderr section" do
+      error = ClaudeSDK.ProcessExitError.exception(exit_code: 1, stderr: "")
+      refute error.message =~ "Stderr:"
+    end
+
+    test "with custom message overrides default" do
+      error =
+        ClaudeSDK.ProcessExitError.exception(
+          exit_code: 1,
+          stderr: "some error",
+          message: "Custom crash"
+        )
+
+      assert error.message == "Custom crash"
+      assert error.stderr == "some error"
+    end
+  end
+
   describe "TimeoutError" do
     test "with timeout_ms" do
       error = ClaudeSDK.TimeoutError.exception(timeout_ms: 30_000)

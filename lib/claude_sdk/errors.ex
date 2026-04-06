@@ -99,29 +99,38 @@ defmodule ClaudeSDK.ProcessExitError do
   @moduledoc """
   Raised when the Claude CLI subprocess exits with a non-zero status.
 
-  Provides structured access to the exit code for diagnostics. Stderr is
-  not captured by Erlang ports by default — use `Options.log_file` or
-  `Options.extra_args: ["--log-file", path]` to capture CLI output.
+  Provides structured access to the exit code and recent stderr output
+  for diagnostics. Stderr is captured automatically when the subprocess
+  uses `:stderr_to_stdout` (enabled by the `on_stderr` option), or when
+  the transport accumulates non-JSON output lines.
 
   ## Fields
 
-  - `message` — Human-readable error message.
+  - `message` — Human-readable error message including stderr excerpt.
   - `exit_code` — The integer exit status from the CLI process.
+  - `stderr` — The last lines of stderr output (may be empty if stderr
+    was not captured). Useful for diagnosing CLI crashes.
   """
-  defexception [:message, :exit_code]
+  defexception [:message, :exit_code, :stderr]
 
   @impl true
   def exception(opts) do
     exit_code = Keyword.get(opts, :exit_code)
+    stderr = Keyword.get(opts, :stderr, "")
 
     message =
-      Keyword.get(
-        opts,
-        :message,
-        "CLI subprocess exited with status #{exit_code}"
-      )
+      Keyword.get(opts, :message) ||
+        build_message(exit_code, stderr)
 
-    %__MODULE__{message: message, exit_code: exit_code}
+    %__MODULE__{message: message, exit_code: exit_code, stderr: stderr}
+  end
+
+  defp build_message(exit_code, stderr) when is_binary(stderr) and byte_size(stderr) > 0 do
+    "CLI subprocess exited with status #{exit_code}\nStderr:\n#{stderr}"
+  end
+
+  defp build_message(exit_code, _stderr) do
+    "CLI subprocess exited with status #{exit_code}"
   end
 end
 

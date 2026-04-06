@@ -81,6 +81,62 @@ defmodule ClaudeSDK.Transport.SubprocessCoverageTest do
     end
   end
 
+  describe "stderr accumulation in ProcessExitError" do
+    @mock_cli_stderr_crash Path.expand("../../support/mock_cli_stderr_crash.sh", __DIR__)
+
+    @tag :capture_log
+    test "non-zero exit includes accumulated stderr lines" do
+      {:ok, pid} =
+        Subprocess.start(caller: self(), options: %Options{cli_path: @mock_cli_stderr_crash})
+
+      Subprocess.send_message(pid, %{
+        type: "control_request",
+        request_id: "req_test",
+        request: %{subtype: "initialize"}
+      })
+
+      assert_receive {:claude_message, %{"type" => "control_response"}}, 5000
+
+      Subprocess.send_message(pid, %{
+        type: "user",
+        session_id: "default",
+        message: %{role: "user", content: "hello"},
+        parent_tool_use_id: nil
+      })
+
+      assert_receive {:claude_exit,
+                      {:error, %ClaudeSDK.ProcessExitError{exit_code: 1, stderr: stderr}}},
+                     5000
+
+      assert stderr =~ "Cannot connect to API"
+      assert stderr =~ "Traceback: auth_handler.js:42"
+      assert stderr =~ "Fatal: unrecoverable error"
+    end
+
+    @tag :capture_log
+    test "zero exit does not include stderr" do
+      {:ok, pid} = Subprocess.start(caller: self(), options: %Options{cli_path: @mock_cli_path})
+
+      Subprocess.send_message(pid, %{
+        type: "control_request",
+        request_id: "req_test",
+        request: %{subtype: "initialize"}
+      })
+
+      assert_receive {:claude_message, %{"type" => "control_response"}}, 5000
+
+      Subprocess.send_message(pid, %{
+        type: "user",
+        session_id: "default",
+        message: %{role: "user", content: "hello"},
+        parent_tool_use_id: nil
+      })
+
+      assert_receive {:claude_message, %{"type" => "result"}}, 5000
+      assert_receive {:claude_exit, :normal}, 5000
+    end
+  end
+
   describe "CLI not found" do
     test "returns CLINotFoundError for non-existent path" do
       result =

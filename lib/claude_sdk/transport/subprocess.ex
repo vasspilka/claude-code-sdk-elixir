@@ -25,7 +25,10 @@ defmodule ClaudeSDK.Transport.Subprocess do
 
   require Logger
 
-  defstruct [:port, :caller, :caller_monitor, :buffer, :cli_path, :options]
+  # Maximum number of recent stderr lines to keep for error diagnostics
+  @max_stderr_lines 50
+
+  defstruct [:port, :caller, :caller_monitor, :buffer, :cli_path, :options, stderr_lines: []]
 
   # Client API
 
@@ -201,6 +204,7 @@ defmodule ClaudeSDK.Transport.Subprocess do
       {:ok, parsed} ->
         ClaudeSDK.Telemetry.message_received(%{type: parsed["type"] || "unknown"})
         send(state.caller, {:claude_message, parsed})
+        {:noreply, %{state | buffer: new_buffer}}
 
       {:error, _} ->
         full_line = if state.buffer.buffer == "", do: line, else: state.buffer.buffer <> line
@@ -212,9 +216,10 @@ defmodule ClaudeSDK.Transport.Subprocess do
             "Skipping non-JSON line from CLI: #{inspect(String.slice(full_line, 0, 200))}"
           )
         end
-    end
 
-    {:noreply, %{state | buffer: new_buffer}}
+        new_stderr = accumulate_stderr(state.stderr_lines, full_line)
+        {:noreply, %{state | buffer: new_buffer, stderr_lines: new_stderr}}
+    end
   end
 
   def handle_info({port, {:data, {:noeol, chunk}}}, %{port: port} = state) do
@@ -239,7 +244,8 @@ defmodule ClaudeSDK.Transport.Subprocess do
   end
 
   def handle_info({port, {:exit_status, code}}, %{port: port} = state) do
-    error = ClaudeSDK.ProcessExitError.exception(exit_code: code)
+    stderr = format_stderr(state.stderr_lines)
+    error = ClaudeSDK.ProcessExitError.exception(exit_code: code, stderr: stderr)
     ClaudeSDK.Telemetry.subprocess_stop(%{reason: {:error, code}})
     send(state.caller, {:claude_exit, {:error, error}})
     {:stop, {:cli_exit, code}, state}
@@ -279,6 +285,15 @@ defmodule ClaudeSDK.Transport.Subprocess do
     do: [:stderr_to_stdout | port_opts]
 
   defp maybe_add_stderr_redirect(port_opts, _options), do: port_opts
+
+  # Keep the most recent @max_stderr_lines lines (stored in reverse order for O(1) prepend)
+  defp accumulate_stderr(lines, new_line) do
+    trimmed = String.trim(new_line)
+    if trimmed == "", do: lines, else: Enum.take([trimmed | lines], @max_stderr_lines)
+  end
+
+  defp format_stderr([]), do: ""
+  defp format_stderr(lines), do: lines |> Enum.reverse() |> Enum.join("\n")
 
   defp try_send_interrupt(port) do
     json =

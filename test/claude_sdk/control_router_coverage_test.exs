@@ -320,6 +320,7 @@ defmodule ClaudeSDK.ControlRouterCoverageTest do
       }
 
       {:handled, response} = ControlRouter.dispatch(raw, handlers)
+
       assert response.response == %{
                subtype: "success",
                request_id: "req_weird_hook",
@@ -411,6 +412,7 @@ defmodule ClaudeSDK.ControlRouterCoverageTest do
 
       {:handled, response} = ControlRouter.dispatch(raw, handlers)
       assert response.type == "control_response"
+
       assert response.response == %{
                subtype: "success",
                request_id: "req_hook_exit",

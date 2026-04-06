@@ -43,7 +43,14 @@ defmodule ClaudeSDK.Types.Options do
   - `disallowed_tools` — Denylist of tool names. These tools are blocked.
   - `can_use_tool` — Callback invoked for each tool call. Accepts either arity-2
     `(tool_name, input)` or arity-3 `(tool_name, input, %ToolPermissionContext{})`.
-    Must return `:allow`, `{:allow, updated_input}`, `:deny`, or `{:deny, reason}`.
+    Return values:
+    - `:allow` — permit the tool use
+    - `{:allow, opts}` — permit with options. `opts` is a keyword list or map with:
+      - `updated_input: map()` — modified tool input to send instead
+      - `updated_permissions: [map()]` — permission updates (see `PermissionUpdate`)
+    - `:deny` — deny with default message
+    - `{:deny, reason}` — deny with a custom reason string
+    - `{:deny, reason, :interrupt}` — deny and interrupt the active conversation
 
   ### Limits
 
@@ -169,13 +176,27 @@ defmodule ClaudeSDK.Types.Options do
 
   @type permission_mode :: :default | :accept_edits | :plan | :bypass_permissions | :dont_ask
 
+  @type permission_result ::
+          :allow
+          | {:allow, permission_allow_opts()}
+          | :deny
+          | {:deny, String.t()}
+          | {:deny, String.t(), :interrupt}
+
+  @type permission_allow_opts ::
+          %{
+            optional(:updated_input) => map(),
+            optional(:updated_permissions) => [map()]
+          }
+          | [updated_input: map(), updated_permissions: [map()]]
+          | map()
+
   @type can_use_tool_callback ::
-          (tool_name :: String.t(), input :: map() ->
-             :allow | {:allow, map()} | :deny | {:deny, String.t()})
+          (tool_name :: String.t(), input :: map() -> permission_result())
           | (tool_name :: String.t(),
              input :: map(),
              context :: ClaudeSDK.Types.ToolPermissionContext.t() ->
-               :allow | {:allow, map()} | :deny | {:deny, String.t()})
+               permission_result())
 
   @type t :: %__MODULE__{
           # CLI path override (nil = auto-discover)

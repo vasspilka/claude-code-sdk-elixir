@@ -119,7 +119,12 @@ defmodule ClaudeSDK.ControlRouter do
           {:allow, map()} | {:deny, String.t()} | {:result, map()}
         ) :: map()
   def build_response(request_id, subtype, {:allow, permissions}) do
-    inner = Map.merge(%{behavior: "allow", updatedInput: Map.get(permissions, :updatedInput, %{})}, permissions)
+    inner =
+      Map.merge(
+        %{behavior: "allow", updatedInput: Map.get(permissions, :updatedInput, %{})},
+        permissions
+      )
+
     wrap_success(request_id, subtype, inner)
   end
 
