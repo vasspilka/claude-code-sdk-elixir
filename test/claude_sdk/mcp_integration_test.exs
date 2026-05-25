@@ -117,8 +117,8 @@ defmodule ClaudeSDK.MCPIntegrationTest do
       assert {:result, response} =
                ClaudeSDK.MCP.Server.handle_jsonrpc("test-server", jsonrpc, index)
 
-      assert response.mcp_response["result"]["isError"] == true
-      [content] = response.mcp_response["result"]["content"]
+      assert response["result"]["isError"] == true
+      [content] = response["result"]["content"]
       assert content["text"] =~ "missing required fields: name"
     end
 
@@ -152,8 +152,8 @@ defmodule ClaudeSDK.MCPIntegrationTest do
       assert {:result, response} =
                ClaudeSDK.MCP.Server.handle_jsonrpc("test-server", jsonrpc, index)
 
-      assert response.mcp_response["result"]["isError"] == false
-      [content] = response.mcp_response["result"]["content"]
+      assert response["result"]["isError"] == false
+      [content] = response["result"]["content"]
       assert content["text"] == "Hello, stranger!"
     end
 

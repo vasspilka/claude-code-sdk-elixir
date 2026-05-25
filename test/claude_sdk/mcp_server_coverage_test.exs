@@ -25,7 +25,7 @@ defmodule ClaudeSDK.MCP.ServerCoverageTest do
       }
 
       assert {:result, response} = Server.handle_jsonrpc("test-server", jsonrpc, index)
-      content = response.mcp_response["result"]["content"]
+      content = response["result"]["content"]
       assert length(content) == 2
       assert hd(content)["text"] == "item1"
     end
@@ -51,7 +51,7 @@ defmodule ClaudeSDK.MCP.ServerCoverageTest do
       }
 
       assert {:result, response} = Server.handle_jsonrpc("test-server", jsonrpc, index)
-      [content] = response.mcp_response["result"]["content"]
+      [content] = response["result"]["content"]
       assert content["text"] == ":hello_world"
     end
 
@@ -74,7 +74,7 @@ defmodule ClaudeSDK.MCP.ServerCoverageTest do
       }
 
       assert {:result, response} = Server.handle_jsonrpc("test-server", jsonrpc, index)
-      [content] = response.mcp_response["result"]["content"]
+      [content] = response["result"]["content"]
       assert content["text"] == "{1, 2, 3}"
     end
 
@@ -97,7 +97,7 @@ defmodule ClaudeSDK.MCP.ServerCoverageTest do
       }
 
       assert {:result, response} = Server.handle_jsonrpc("test-server", jsonrpc, index)
-      [content] = response.mcp_response["result"]["content"]
+      [content] = response["result"]["content"]
       assert content["text"] == "42"
     end
   end
@@ -129,7 +129,7 @@ defmodule ClaudeSDK.MCP.ServerCoverageTest do
       }
 
       assert {:result, response} = Server.handle_jsonrpc("utf8-server", jsonrpc, index)
-      [content] = response.mcp_response["result"]["content"]
+      [content] = response["result"]["content"]
       assert content["text"] =~ "truncated: result exceeded 1MB limit"
       # Result must be valid UTF-8
       assert String.valid?(content["text"])
@@ -157,7 +157,7 @@ defmodule ClaudeSDK.MCP.ServerCoverageTest do
 
       # Missing "name" -> tool_name is "" -> not found
       assert {:result, response} = Server.handle_jsonrpc("test-server", jsonrpc, index)
-      assert response.mcp_response["error"]["code"] == -32601
+      assert response["error"]["code"] == -32601
     end
 
     test "handles missing arguments in params" do
@@ -180,7 +180,7 @@ defmodule ClaudeSDK.MCP.ServerCoverageTest do
 
       # Missing "arguments" -> defaults to %{}
       assert {:result, response} = Server.handle_jsonrpc("test-server", jsonrpc, index)
-      [content] = response.mcp_response["result"]["content"]
+      [content] = response["result"]["content"]
       assert content["text"] == "Hello, world!"
     end
   end
@@ -217,8 +217,8 @@ defmodule ClaudeSDK.MCP.ServerCoverageTest do
       }
 
       assert {:result, response} = Server.handle_jsonrpc("s", jsonrpc, index)
-      assert response.mcp_response["result"]["isError"] == true
-      [content] = response.mcp_response["result"]["content"]
+      assert response["result"]["isError"] == true
+      [content] = response["result"]["content"]
       assert content["text"] =~ "Tool handler error"
     end
   end
@@ -252,8 +252,8 @@ defmodule ClaudeSDK.MCP.ServerCoverageTest do
       }
 
       assert {:result, resp} = Server.handle_jsonrpc("s", jsonrpc, index)
-      assert resp.mcp_response["result"]["isError"] == true
-      [content] = resp.mcp_response["result"]["content"]
+      assert resp["result"]["isError"] == true
+      [content] = resp["result"]["content"]
       assert content["text"] =~ "expected type string, got integer"
     end
 
@@ -269,8 +269,8 @@ defmodule ClaudeSDK.MCP.ServerCoverageTest do
       }
 
       assert {:result, resp} = Server.handle_jsonrpc("s", jsonrpc, index)
-      assert resp.mcp_response["result"]["isError"] == true
-      [content] = resp.mcp_response["result"]["content"]
+      assert resp["result"]["isError"] == true
+      [content] = resp["result"]["content"]
       assert content["text"] =~ "expected type integer, got string"
     end
 
@@ -286,8 +286,8 @@ defmodule ClaudeSDK.MCP.ServerCoverageTest do
       }
 
       assert {:result, resp} = Server.handle_jsonrpc("s", jsonrpc, index)
-      assert resp.mcp_response["result"]["isError"] == true
-      [content] = resp.mcp_response["result"]["content"]
+      assert resp["result"]["isError"] == true
+      [content] = resp["result"]["content"]
       assert content["text"] =~ "expected type number, got string"
     end
 
@@ -303,8 +303,8 @@ defmodule ClaudeSDK.MCP.ServerCoverageTest do
       }
 
       assert {:result, resp} = Server.handle_jsonrpc("s", jsonrpc, index)
-      assert resp.mcp_response["result"]["isError"] == true
-      [content] = resp.mcp_response["result"]["content"]
+      assert resp["result"]["isError"] == true
+      [content] = resp["result"]["content"]
       assert content["text"] =~ "expected type boolean, got string"
     end
 
@@ -320,8 +320,8 @@ defmodule ClaudeSDK.MCP.ServerCoverageTest do
       }
 
       assert {:result, resp} = Server.handle_jsonrpc("s", jsonrpc, index)
-      assert resp.mcp_response["result"]["isError"] == true
-      [content] = resp.mcp_response["result"]["content"]
+      assert resp["result"]["isError"] == true
+      [content] = resp["result"]["content"]
       assert content["text"] =~ "expected type object, got string"
     end
 
@@ -337,8 +337,8 @@ defmodule ClaudeSDK.MCP.ServerCoverageTest do
       }
 
       assert {:result, resp} = Server.handle_jsonrpc("s", jsonrpc, index)
-      assert resp.mcp_response["result"]["isError"] == true
-      [content] = resp.mcp_response["result"]["content"]
+      assert resp["result"]["isError"] == true
+      [content] = resp["result"]["content"]
       assert content["text"] =~ "expected type array, got string"
     end
 
@@ -374,7 +374,7 @@ defmodule ClaudeSDK.MCP.ServerCoverageTest do
       }
 
       assert {:result, resp} = Server.handle_jsonrpc("s", jsonrpc, index)
-      assert resp.mcp_response["result"]["isError"] == false
+      assert resp["result"]["isError"] == false
     end
 
     test "null type always passes", %{make_tool: make_tool} do
@@ -389,7 +389,7 @@ defmodule ClaudeSDK.MCP.ServerCoverageTest do
       }
 
       assert {:result, resp} = Server.handle_jsonrpc("s", jsonrpc, index)
-      assert resp.mcp_response["result"]["isError"] == false
+      assert resp["result"]["isError"] == false
     end
 
     test "property not in schema is ignored", %{make_tool: make_tool} do
@@ -410,7 +410,7 @@ defmodule ClaudeSDK.MCP.ServerCoverageTest do
       }
 
       assert {:result, resp} = Server.handle_jsonrpc("s", jsonrpc, index)
-      assert resp.mcp_response["result"]["isError"] == false
+      assert resp["result"]["isError"] == false
     end
 
     test "property without type in schema is ignored", %{make_tool: make_tool} do
@@ -428,7 +428,7 @@ defmodule ClaudeSDK.MCP.ServerCoverageTest do
       }
 
       assert {:result, resp} = Server.handle_jsonrpc("s", jsonrpc, index)
-      assert resp.mcp_response["result"]["isError"] == false
+      assert resp["result"]["isError"] == false
     end
   end
 
@@ -452,7 +452,7 @@ defmodule ClaudeSDK.MCP.ServerCoverageTest do
       }
 
       assert {:result, resp} = Server.handle_jsonrpc("s", jsonrpc, index)
-      [content] = resp.mcp_response["result"]["content"]
+      [content] = resp["result"]["content"]
       decoded = Jason.decode!(content["text"])
       assert decoded == %{"key" => "value"}
     end
@@ -485,8 +485,8 @@ defmodule ClaudeSDK.MCP.ServerCoverageTest do
     test "returns method not supported for unknown method with id" do
       jsonrpc = %{"jsonrpc" => "2.0", "id" => 99, "method" => "resources/list"}
       assert {:result, resp} = Server.handle_jsonrpc("s", jsonrpc, %{})
-      assert resp.message["error"]["code"] == -32601
-      assert resp.message["error"]["message"] == "Method not supported"
+      assert resp["error"]["code"] == -32601
+      assert resp["error"]["message"] == "Method not supported"
     end
   end
 
@@ -512,7 +512,7 @@ defmodule ClaudeSDK.MCP.ServerCoverageTest do
 
       jsonrpc = %{"jsonrpc" => "2.0", "id" => 1, "method" => "tools/list"}
       assert {:result, resp} = Server.handle_jsonrpc("s1", jsonrpc, index)
-      tools = resp.message["result"]["tools"]
+      tools = resp["result"]["tools"]
       assert length(tools) == 1
       assert hd(tools)["name"] == "a"
     end
@@ -538,7 +538,7 @@ defmodule ClaudeSDK.MCP.ServerCoverageTest do
       }
 
       assert {:result, resp} = Server.handle_jsonrpc("s", jsonrpc, index)
-      assert resp.mcp_response["result"]["isError"] == false
+      assert resp["result"]["isError"] == false
     end
   end
 
@@ -571,8 +571,8 @@ defmodule ClaudeSDK.MCP.ServerCoverageTest do
       }
 
       assert {:result, resp} = Server.handle_jsonrpc("s", jsonrpc, index)
-      assert resp.mcp_response["result"]["isError"] == true
-      [content] = resp.mcp_response["result"]["content"]
+      assert resp["result"]["isError"] == true
+      [content] = resp["result"]["content"]
       assert content["text"] =~ "got number"
     end
 
@@ -585,8 +585,8 @@ defmodule ClaudeSDK.MCP.ServerCoverageTest do
       }
 
       assert {:result, resp} = Server.handle_jsonrpc("s", jsonrpc, index)
-      assert resp.mcp_response["result"]["isError"] == true
-      [content] = resp.mcp_response["result"]["content"]
+      assert resp["result"]["isError"] == true
+      [content] = resp["result"]["content"]
       assert content["text"] =~ "got boolean"
     end
 
@@ -599,8 +599,8 @@ defmodule ClaudeSDK.MCP.ServerCoverageTest do
       }
 
       assert {:result, resp} = Server.handle_jsonrpc("s", jsonrpc, index)
-      assert resp.mcp_response["result"]["isError"] == true
-      [content] = resp.mcp_response["result"]["content"]
+      assert resp["result"]["isError"] == true
+      [content] = resp["result"]["content"]
       assert content["text"] =~ "got object"
     end
 
@@ -613,8 +613,8 @@ defmodule ClaudeSDK.MCP.ServerCoverageTest do
       }
 
       assert {:result, resp} = Server.handle_jsonrpc("s", jsonrpc, index)
-      assert resp.mcp_response["result"]["isError"] == true
-      [content] = resp.mcp_response["result"]["content"]
+      assert resp["result"]["isError"] == true
+      [content] = resp["result"]["content"]
       assert content["text"] =~ "got array"
     end
 
@@ -627,8 +627,8 @@ defmodule ClaudeSDK.MCP.ServerCoverageTest do
       }
 
       assert {:result, resp} = Server.handle_jsonrpc("s", jsonrpc, index)
-      assert resp.mcp_response["result"]["isError"] == true
-      [content] = resp.mcp_response["result"]["content"]
+      assert resp["result"]["isError"] == true
+      [content] = resp["result"]["content"]
       assert content["text"] =~ "got null"
     end
   end
