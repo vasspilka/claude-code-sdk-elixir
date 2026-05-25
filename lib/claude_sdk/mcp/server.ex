@@ -106,7 +106,12 @@ defmodule ClaudeSDK.MCP.Server do
   - `tools/list` — returns the list of tools registered for the given server.
   - Any other method — returns a JSONRPC "method not supported" error.
 
-  Always returns a `{:result, response_map}` tuple with the JSONRPC response.
+  Always returns a `{:result, jsonrpc_response}` tuple. The
+  `jsonrpc_response` is the bare JSONRPC payload (`%{"jsonrpc" => "2.0",
+  "id" => id, "result" | "error" => ...}`); the surrounding
+  `mcp_response` envelope is added by `ClaudeSDK.ControlRouter.build_response/3`,
+  which the CLI expects at `response.response.mcp_response` (matches the
+  shape sent by the Python `claude_agent_sdk`).
   """
   @spec handle_jsonrpc(String.t(), map(), map()) :: {:result, map()}
   def handle_jsonrpc(
@@ -150,11 +155,9 @@ defmodule ClaudeSDK.MCP.Server do
 
     {:result,
      %{
-       message: %{
-         "jsonrpc" => "2.0",
-         "id" => id,
-         "result" => %{"tools" => tools}
-       }
+       "jsonrpc" => "2.0",
+       "id" => id,
+       "result" => %{"tools" => tools}
      }}
   end
 
@@ -168,14 +171,12 @@ defmodule ClaudeSDK.MCP.Server do
 
     {:result,
      %{
-       message: %{
-         "jsonrpc" => "2.0",
-         "id" => id,
-         "result" => %{
-           "protocolVersion" => "2025-11-25",
-           "capabilities" => %{"tools" => %{}},
-           "serverInfo" => %{"name" => server_name, "version" => version}
-         }
+       "jsonrpc" => "2.0",
+       "id" => id,
+       "result" => %{
+         "protocolVersion" => "2025-11-25",
+         "capabilities" => %{"tools" => %{}},
+         "serverInfo" => %{"name" => server_name, "version" => version}
        }
      }}
   end
@@ -183,13 +184,11 @@ defmodule ClaudeSDK.MCP.Server do
   def handle_jsonrpc(_server_name, %{"id" => id}, _tool_index) do
     {:result,
      %{
-       message: %{
-         "jsonrpc" => "2.0",
-         "id" => id,
-         "error" => %{
-           "code" => -32601,
-           "message" => "Method not supported"
-         }
+       "jsonrpc" => "2.0",
+       "id" => id,
+       "error" => %{
+         "code" => -32601,
+         "message" => "Method not supported"
        }
      }}
   end
@@ -212,13 +211,11 @@ defmodule ClaudeSDK.MCP.Server do
         {:tool_not_found,
          {:result,
           %{
-            mcp_response: %{
-              "jsonrpc" => "2.0",
-              "id" => id,
-              "error" => %{
-                "code" => -32601,
-                "message" => "Tool not found: #{tool_name}"
-              }
+            "jsonrpc" => "2.0",
+            "id" => id,
+            "error" => %{
+              "code" => -32601,
+              "message" => "Tool not found: #{tool_name}"
             }
           }}}
 
@@ -228,15 +225,13 @@ defmodule ClaudeSDK.MCP.Server do
             {:validation_error,
              {:result,
               %{
-                mcp_response: %{
-                  "jsonrpc" => "2.0",
-                  "id" => id,
-                  "result" => %{
-                    "content" => [
-                      %{"type" => "text", "text" => "Validation error: #{validation_error}"}
-                    ],
-                    "isError" => true
-                  }
+                "jsonrpc" => "2.0",
+                "id" => id,
+                "result" => %{
+                  "content" => [
+                    %{"type" => "text", "text" => "Validation error: #{validation_error}"}
+                  ],
+                  "isError" => true
                 }
               }}}
 
@@ -253,24 +248,20 @@ defmodule ClaudeSDK.MCP.Server do
                   {:ok,
                    {:result,
                     %{
-                      mcp_response: %{
-                        "jsonrpc" => "2.0",
-                        "id" => id,
-                        "result" => result_map
-                      }
+                      "jsonrpc" => "2.0",
+                      "id" => id,
+                      "result" => result_map
                     }}}
 
                 {:error, reason} ->
                   {:error,
                    {:result,
                     %{
-                      mcp_response: %{
-                        "jsonrpc" => "2.0",
-                        "id" => id,
-                        "result" => %{
-                          "content" => [%{"type" => "text", "text" => to_string(reason)}],
-                          "isError" => true
-                        }
+                      "jsonrpc" => "2.0",
+                      "id" => id,
+                      "result" => %{
+                        "content" => [%{"type" => "text", "text" => to_string(reason)}],
+                        "isError" => true
                       }
                     }}}
               end
@@ -283,18 +274,16 @@ defmodule ClaudeSDK.MCP.Server do
                 {:crash,
                  {:result,
                   %{
-                    mcp_response: %{
-                      "jsonrpc" => "2.0",
-                      "id" => id,
-                      "result" => %{
-                        "content" => [
-                          %{
-                            "type" => "text",
-                            "text" => "Tool handler error: internal error"
-                          }
-                        ],
-                        "isError" => true
-                      }
+                    "jsonrpc" => "2.0",
+                    "id" => id,
+                    "result" => %{
+                      "content" => [
+                        %{
+                          "type" => "text",
+                          "text" => "Tool handler error: internal error"
+                        }
+                      ],
+                      "isError" => true
                     }
                   }}}
             end
